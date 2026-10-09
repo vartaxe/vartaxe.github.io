@@ -6,35 +6,11 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#155799">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
-  <title>ConfigMgr OSD Script Hub | vartaxe</title>
-  <meta name="description" content="Safety-focused PowerShell scripts for Configuration Manager operating-system deployment.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <title>Windows Endpoint Automation | vartaxe</title>
+  <meta name="description" content="Safety-focused PowerShell tools for ConfigMgr OSD and Windows endpoint automation.">
   <link rel="canonical" href="https://vartaxe.github.io/">
-  <style>
-    :root{color-scheme:light dark;--bg:#fff;--panel:#f4f7fb;--text:#1f2a37;--muted:#52606d;--link:#155799;--border:#d8e0ea;--accent:#159895}
-    *{box-sizing:border-box}
-    body{font-family:"Segoe UI",Arial,sans-serif;line-height:1.55;margin:0;color:var(--text);background:var(--bg)}
-    a{color:var(--link);text-underline-offset:.18em}
-    a:hover{text-decoration-thickness:.15em}
-    a:focus-visible{outline:3px solid var(--accent);outline-offset:4px;border-radius:2px}
-    .skip-link{position:absolute;left:-9999px;top:auto}
-    .skip-link:focus{left:1rem;top:1rem;background:var(--bg);padding:.5rem;z-index:2}
-    header{background:linear-gradient(135deg,#155799,#159895);color:#fff;padding:3rem 1rem}
-    header>div,main,footer{max-width:68rem;margin:0 auto}
-    nav{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:2rem}
-    nav a{color:#fff;font-weight:600}
-    h1{font-size:clamp(2rem,5vw,3.5rem);line-height:1.1;margin:.5rem 0}
-    h2{margin-top:2.5rem}
-    .tagline{font-size:1.2rem;max-width:48rem}
-    main{padding:1rem}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem}
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:.5rem;padding:1.25rem}
-    .card h3{margin-top:0}
-    .card p:last-child{margin-bottom:0}
-    .callout{border-left:.35rem solid var(--accent);background:var(--panel);padding:.75rem 1rem;margin:2rem 0}
-    footer{border-top:1px solid var(--border);margin-top:2rem;padding:1.5rem 1rem;color:var(--muted)}
-    @media(prefers-color-scheme:dark){:root{--bg:#0d1520;--panel:#162235;--text:#f5f7fa;--muted:#c4ced8;--link:#9dcbff;--border:#33445a}}
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -42,16 +18,18 @@
     <div>
       <nav aria-label="Site navigation">
         <a href="#scripts">Scripts</a>
-        <a href="https://vartaxe.github.io/vartaxe/">Profile</a>
+        <a href="#profile">Profile</a>
+        <a href="#maintenance">Maintenance</a>
         <a href="https://github.com/vartaxe">GitHub</a>
         <a href="https://github.com/sponsors/vartaxe">Sponsor</a>
       </nav>
-      <h1>ConfigMgr OSD Script Hub</h1>
-      <p class="tagline">Safety-focused Windows PowerShell 5.1 scripts for Configuration Manager operating-system deployment.</p>
+      <p class="eyebrow">Claudio Mendes · <span translate="no">@vartaxe</span></p>
+      <h1>Windows endpoint automation</h1>
+      <p class="tagline">Safety-focused Windows PowerShell 5.1 tools for Configuration Manager operating-system deployment and endpoint management.</p>
     </div>
   </header>
   <main id="main-content" tabindex="-1">
-    <h2 id="scripts">Scripts</h2>
+    <h2 id="scripts">ConfigMgr OSD scripts</h2>
     <div class="grid">
       <section class="card" aria-labelledby="ad-title">
         <h3 id="ad-title">Add computers to AD groups</h3>
@@ -73,14 +51,22 @@
     <div class="callout" role="note">
       <strong>Validate before rollout.</strong> Automated checks cover syntax, static analysis, and mocked scenarios. Live ConfigMgr, Active Directory, WinPE, and SMB testing remains environment-specific; use a lab and disposable hardware first.
     </div>
-    <h2>Related maintenance</h2>
+    <h2 id="maintenance">Related maintenance</h2>
     <div class="card">
       <p>Driver and BIOS package automation is maintained in <a href="https://github.com/vartaxe/DriverAutomationTool">Driver Automation Tool</a>, including the consolidated modern management scripts and vendor BIOS apply scripts.</p>
-      <p>The former standalone Modern Driver Management and Modern BIOS Management repositories are archived compatibility sources.</p>
+      <p>The former standalone Modern Driver Management and Modern BIOS Management repositories are archived compatibility sources. New maintenance belongs in DAT.</p>
+    </div>
+    <h2 id="profile">About Claudio</h2>
+    <div class="card">
+      <p>I write PowerShell tools for repeatable Windows deployment jobs, with clear inputs, useful logs, and explicit outcomes. The projects are self-contained, MIT-licensed, and designed for documented validation before rollout.</p>
+      <p><a href="https://github.com/vartaxe">GitHub profile</a> · <a href="mailto:vartaxe@outlook.com">Contact Claudio</a> · <a href="https://github.com/sponsors/vartaxe">Sponsor the maintenance</a></p>
+    </div>
+    <div class="callout" role="note">
+      <strong>Security and support.</strong> For bugs or usage questions, use the affected repository's support path. Report vulnerabilities privately through its security policy; do not disclose them in a public issue.
     </div>
   </main>
   <footer>
-    <p>Maintained by <a href="https://github.com/vartaxe">Claudio Mendes (@vartaxe)</a>. <a href="https://vartaxe.github.io/vartaxe/">View the profile site</a>.</p>
+    <p>Maintained by <a href="https://github.com/vartaxe">Claudio Mendes (<span translate="no">@vartaxe</span>)</a>. The root site is the canonical public hub.</p>
   </footer>
 </body>
 </html>

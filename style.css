@@ -1,0 +1,163 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --panel: #f4f7fb;
+  --text: #1f2a37;
+  --muted: #52606d;
+  --link: #155799;
+  --border: #d8e0ea;
+  --accent: #159895;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Arial, sans-serif;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+}
+
+a {
+  color: var(--link);
+  text-underline-offset: 0.18em;
+  touch-action: manipulation;
+}
+
+a:hover {
+  text-decoration-thickness: 0.15em;
+}
+
+a:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0.5rem 1rem;
+  transform: translateY(-200%);
+  background: var(--bg);
+  z-index: 2;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+header {
+  padding: 3rem 1rem;
+  color: #ffffff;
+  background: linear-gradient(135deg, #155799, #159895);
+}
+
+header > div,
+main,
+footer {
+  max-width: 68rem;
+  margin: 0 auto;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+nav a {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.eyebrow {
+  margin-bottom: 0;
+  font-weight: 600;
+}
+
+h1 {
+  margin: 0.5rem 0;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+h2 {
+  margin-top: 2.5rem;
+  scroll-margin-top: 1rem;
+  text-wrap: balance;
+}
+
+.tagline {
+  max-width: 48rem;
+  font-size: 1.2rem;
+  text-wrap: balance;
+}
+
+main {
+  padding: 1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  min-width: 0;
+  padding: 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.card h3 {
+  margin-top: 0;
+}
+
+.card p:last-child {
+  margin-bottom: 0;
+}
+
+.callout {
+  margin: 2rem 0;
+  padding: 0.75rem 1rem;
+  background: var(--panel);
+  border-left: 0.35rem solid var(--accent);
+}
+
+footer {
+  margin-top: 2rem;
+  padding: 1.5rem 1rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1520;
+    --panel: #162235;
+    --text: #f5f7fa;
+    --muted: #c4ced8;
+    --link: #9dcbff;
+    --border: #33445a;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
