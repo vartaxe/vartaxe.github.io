@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">vartaxe automation mark</title>
+  <desc id="desc">A terminal window connected to three deployment nodes.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#dff7f1"/>
+    </linearGradient>
+  </defs>
+  <circle cx="120" cy="120" r="108" fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="2"/>
+  <path d="M120 155v25m0 0-53 20m53-20 53 20" fill="none" stroke="#70dec5" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="67" cy="200" r="12" fill="#fff"/>
+  <circle cx="120" cy="180" r="12" fill="#fff"/>
+  <circle cx="173" cy="200" r="12" fill="#fff"/>
+  <rect x="46" y="48" width="148" height="108" rx="18" fill="url(#tile)"/>
+  <circle cx="66" cy="68" r="5" fill="#155799"/>
+  <circle cx="84" cy="68" r="5" fill="#159895"/>
+  <path d="m78 94 28 24-28 24m47 0h37" fill="none" stroke="#155799" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

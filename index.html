@@ -4,12 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#155799">
+  <meta name="theme-color" content="#155799" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
   <title>Windows Endpoint Automation | vartaxe</title>
   <meta name="description" content="Safety-focused PowerShell tools for ConfigMgr OSD and Windows endpoint automation.">
   <link rel="canonical" href="https://vartaxe.github.io/">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,36 +25,57 @@
         <a href="https://github.com/vartaxe">GitHub</a>
         <a href="https://github.com/sponsors/vartaxe">Sponsor</a>
       </nav>
-      <p class="eyebrow">Claudio Mendes · <span translate="no">@vartaxe</span></p>
-      <h1>Windows endpoint automation</h1>
-      <p class="tagline">Safety-focused Windows PowerShell 5.1 tools for Configuration Manager operating-system deployment and endpoint management.</p>
+      <div class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Claudio Mendes · <span translate="no">@vartaxe</span></p>
+          <h1>Windows endpoint automation</h1>
+          <p class="tagline">Safety-focused Windows PowerShell 5.1 tools for Configuration Manager operating-system deployment and endpoint management.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#scripts">Explore the scripts</a>
+            <a class="button" href="https://github.com/vartaxe">Browse GitHub</a>
+          </div>
+          <ul class="trust-list" aria-label="Project principles">
+            <li>MIT licensed</li>
+            <li>PowerShell 5.1</li>
+            <li>Validation first</li>
+          </ul>
+        </div>
+        <img class="brand-mark" src="assets/brand-mark.svg" alt="Terminal prompt and deployment nodes representing vartaxe automation" width="240" height="240" fetchpriority="high">
+      </div>
     </div>
   </header>
   <main id="main-content" tabindex="-1">
     <h2 id="scripts">ConfigMgr OSD scripts</h2>
     <div class="grid">
       <section class="card" aria-labelledby="ad-title">
+        <img class="card-icon" src="assets/ad-groups.svg" alt="" width="48" height="48" aria-hidden="true">
+        <p class="card-kicker">Active Directory</p>
         <h3 id="ad-title">Add computers to AD groups</h3>
         <p>Add a computer account to Active Directory groups during an OSD task sequence with Kerberos over LDAPS, membership verification, bounded retries, and CMTrace logging.</p>
-        <p><a href="https://github.com/vartaxe/ConfigMgr-OSD-AddComputerToADGroup">Source</a> · <a href="https://vartaxe.github.io/ConfigMgr-OSD-AddComputerToADGroup/">Documentation</a></p>
+        <p class="card-links"><a href="https://vartaxe.github.io/ConfigMgr-OSD-AddComputerToADGroup/">Read the guide</a><a href="https://github.com/vartaxe/ConfigMgr-OSD-AddComputerToADGroup">View source</a></p>
       </section>
       <section class="card" aria-labelledby="logs-title">
+        <img class="card-icon" src="assets/osd-logs.svg" alt="" width="48" height="48" aria-hidden="true">
+        <p class="card-kicker">Diagnostics</p>
         <h3 id="logs-title">Copy OSD logs to a file share</h3>
         <p>Collect and archive deployment logs, then upload the verified ZIP to an SMB share with retries and remote size checks.</p>
-        <p><a href="https://github.com/vartaxe/ConfigMgr-OSD-CopyOSDLogToFileShare">Source</a> · <a href="https://vartaxe.github.io/ConfigMgr-OSD-CopyOSDLogToFileShare/">Documentation</a></p>
+        <p class="card-links"><a href="https://vartaxe.github.io/ConfigMgr-OSD-CopyOSDLogToFileShare/">Read the guide</a><a href="https://github.com/vartaxe/ConfigMgr-OSD-CopyOSDLogToFileShare">View source</a></p>
       </section>
       <section class="card" aria-labelledby="disk-title">
+        <img class="card-icon" src="assets/disk-layout.svg" alt="" width="48" height="48" aria-hidden="true">
+        <p class="card-kicker">WinPE storage</p>
         <h3 id="disk-title">Disk partition layout</h3>
         <p>Create a firmware-appropriate GPT or MBR layout in WinPE with fail-closed target selection and explicit safety checks.</p>
-        <p><strong>Warning:</strong> this irreversibly cleans and repartitions the target disk.</p>
-        <p><a href="https://github.com/vartaxe/ConfigMgr-OSD-DiskPartitionLayout">Source</a> · <a href="https://vartaxe.github.io/ConfigMgr-OSD-DiskPartitionLayout/">Documentation</a></p>
+        <p class="warning"><strong>Warning:</strong> this irreversibly cleans and repartitions the target disk.</p>
+        <p class="card-links"><a href="https://vartaxe.github.io/ConfigMgr-OSD-DiskPartitionLayout/">Read the guide</a><a href="https://github.com/vartaxe/ConfigMgr-OSD-DiskPartitionLayout">View source</a></p>
       </section>
     </div>
     <div class="callout" role="note">
       <strong>Validate before rollout.</strong> Automated checks cover syntax, static analysis, and mocked scenarios. Live ConfigMgr, Active Directory, WinPE, and SMB testing remains environment-specific; use a lab and disposable hardware first.
     </div>
     <h2 id="maintenance">Related maintenance</h2>
-    <div class="card">
+    <div class="card maintenance-card">
+      <img class="card-icon" src="assets/driver-automation.svg" alt="" width="48" height="48" aria-hidden="true">
       <p>Driver and BIOS package automation is maintained in <a href="https://github.com/vartaxe/DriverAutomationTool">Driver Automation Tool</a>, including the consolidated modern management scripts and vendor BIOS apply scripts.</p>
       <p>The former standalone Modern Driver Management and Modern BIOS Management repositories are archived compatibility sources. New maintenance belongs in DAT.</p>
     </div>

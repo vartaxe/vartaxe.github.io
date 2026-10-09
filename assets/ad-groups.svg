@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-labelledby="title desc">
+  <title id="title">Active Directory groups</title>
+  <desc id="desc">Three people connected as a group.</desc>
+  <rect width="48" height="48" rx="12" fill="#e3f2ff"/>
+  <circle cx="24" cy="17" r="6" fill="#155799"/>
+  <circle cx="12" cy="24" r="5" fill="#159895"/>
+  <circle cx="36" cy="24" r="5" fill="#159895"/>
+  <path d="M14 39c0-6 4-10 10-10s10 4 10 10M5 40c0-5 3-9 8-9m30 9c0-5-3-9-8-9" fill="none" stroke="#155799" stroke-width="3" stroke-linecap="round"/>
+</svg>

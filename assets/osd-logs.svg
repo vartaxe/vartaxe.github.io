@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-labelledby="title desc">
+  <title id="title">OSD log archive</title>
+  <desc id="desc">A document moving into a verified archive.</desc>
+  <rect width="48" height="48" rx="12" fill="#e4f7f2"/>
+  <path d="M9 13h16l5 6h9v20H9z" fill="#fff" stroke="#117865" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M16 26h15m-15 6h10" stroke="#155799" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="37" cy="12" r="7" fill="#155799"/>
+  <path d="m34 12 2 2 4-5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
