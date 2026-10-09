@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-labelledby="title desc">
+  <title id="title">Driver Automation Tool</title>
+  <desc id="desc">A package surrounded by automation arrows.</desc>
+  <rect width="48" height="48" rx="12" fill="#e4f7f2"/>
+  <path d="m24 9 13 7v16l-13 7-13-7V16z" fill="#fff" stroke="#117865" stroke-width="3" stroke-linejoin="round"/>
+  <path d="m11 16 13 7 13-7M24 23v16" fill="none" stroke="#155799" stroke-width="3"/>
+  <path d="M7 12h8l-3-3m29 27h-8l3 3" fill="none" stroke="#159895" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

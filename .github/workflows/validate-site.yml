@@ -1,0 +1,58 @@
+name: Validate site
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate local assets and SVG accessibility
+        shell: python
+        run: |
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.parse import urlparse
+          import xml.etree.ElementTree as ET
+
+          root = Path(".")
+
+          class LocalAssetParser(HTMLParser):
+              def handle_starttag(self, tag, attrs):
+                  values = dict(attrs)
+                  for attribute in ("href", "src"):
+                      value = values.get(attribute)
+                      if not value or urlparse(value).scheme or value.startswith(("#", "mailto:")):
+                          continue
+                      path = root / value.split("?", 1)[0].split("#", 1)[0]
+                      if not path.is_file():
+                          raise SystemExit(f"Missing local asset: {value}")
+
+          html = (root / "index.html").read_text(encoding="utf-8")
+          LocalAssetParser().feed(html)
+
+          if "style-src 'self'" not in html or "img-src 'self'" not in html:
+              raise SystemExit("The CSP must restrict styles and images to local assets.")
+
+          for path in sorted((root / "assets").glob("*.svg")):
+              svg = ET.parse(path).getroot()
+              if svg.get("role") != "img":
+                  raise SystemExit(f"{path} is missing role=img")
+              labels = svg.get("aria-labelledby", "").split()
+              ids = {element.get("id") for element in svg.iter() if element.get("id")}
+              if len(labels) != 2 or not set(labels).issubset(ids):
+                  raise SystemExit(f"{path} has an invalid accessible label")
+
+          css = (root / "style.css").read_text(encoding="utf-8")
+          if "transition: all" in css:
+              raise SystemExit("Avoid transition: all.")
+          if "prefers-reduced-motion" not in css or ":focus-visible" not in css:
+              raise SystemExit("Reduced-motion and visible-focus styles are required.")
