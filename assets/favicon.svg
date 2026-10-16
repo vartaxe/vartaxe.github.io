@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-labelledby="title desc">
-  <title id="title">vartaxe terminal</title>
-  <desc id="desc">A terminal prompt on a blue tile with a teal underline.</desc>
-  <rect width="48" height="48" rx="10" fill="#155799"/>
-  <path d="m11 15 9 9-9 9m15 0h11" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M10 42h28" stroke="#70dec5" stroke-width="3" stroke-linecap="round"/>
+  <title id="title">Claudio Mendes monogram</title>
+  <desc id="desc">The initials CM on a deep green tile.</desc>
+  <rect width="48" height="48" rx="10" fill="#17221c"/>
+  <text x="24" y="32" fill="#fffdf8" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" letter-spacing="-2" text-anchor="middle">CM</text>
+  <path d="M10 43h28" stroke="#e79778" stroke-width="3" stroke-linecap="round"/>
 </svg>

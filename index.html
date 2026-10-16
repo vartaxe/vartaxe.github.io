@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#155799" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4f0e8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#151b18" media="(prefers-color-scheme: dark)">
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
-  <title>Windows Endpoint Automation | vartaxe</title>
-  <meta name="description" content="Safety-focused PowerShell tools for ConfigMgr OSD and Windows endpoint automation.">
+  <title>Claudio Mendes | Windows endpoint automation</title>
+  <meta name="description" content="PowerShell tools for Windows endpoint automation, Configuration Manager deployment, and Active Directory.">
   <link rel="canonical" href="https://vartaxe.github.io/">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
@@ -19,78 +19,98 @@
   <header>
     <div>
       <nav aria-label="Site navigation">
-        <a href="#scripts">Scripts</a>
-        <a href="#profile">Profile</a>
-        <a href="#maintenance">Maintenance</a>
+        <a href="#projects">Projects</a>
+        <a href="#approach">Approach</a>
+        <a href="#about">About</a>
         <a href="https://github.com/vartaxe">GitHub</a>
         <a href="https://github.com/sponsors/vartaxe">Sponsor</a>
       </nav>
       <div class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Claudio Mendes · <span translate="no">@vartaxe</span></p>
-          <h1>Windows endpoint automation</h1>
-          <p class="tagline">Safety-focused Windows PowerShell 5.1 tools for Configuration Manager operating-system deployment and endpoint management.</p>
+          <p class="eyebrow">PowerShell · Configuration Manager · Active Directory</p>
+          <h1>Claudio Mendes</h1>
+          <p class="tagline">Windows endpoint automation built around clear inputs, useful logs, and predictable outcomes.</p>
           <div class="hero-actions">
-            <a class="button button-primary" href="#scripts">Explore the scripts</a>
-            <a class="button" href="https://github.com/vartaxe">Browse GitHub</a>
+            <a class="button button-primary" href="#projects">Explore the projects</a>
+            <a class="button" href="https://github.com/vartaxe">GitHub <span translate="no">@vartaxe</span></a>
           </div>
-          <ul class="trust-list" aria-label="Project principles">
-            <li>OSD scripts: MIT</li>
-            <li>PowerShell 5.1</li>
-            <li>Validation first</li>
-          </ul>
+          <p class="hero-note">Independent tools for Windows deployment and endpoint operations.</p>
         </div>
-        <img class="brand-mark" src="assets/brand-mark.svg" alt="Terminal prompt and deployment nodes representing vartaxe automation" width="240" height="240" fetchpriority="high">
+        <img class="brand-mark" src="assets/brand-mark.svg" alt="" width="240" height="240" aria-hidden="true" fetchpriority="high">
       </div>
     </div>
   </header>
   <main id="main-content" tabindex="-1">
-    <h2 id="scripts">ConfigMgr OSD scripts</h2>
-    <div class="grid">
-      <section class="card" aria-labelledby="ad-title">
-        <img class="card-icon" src="assets/ad-groups.svg" alt="" width="48" height="48" aria-hidden="true">
-        <p class="card-kicker">Active Directory</p>
-        <h3 id="ad-title">Add computers to AD groups</h3>
-        <p>Add a computer account to Active Directory groups during an OSD task sequence with Kerberos over LDAPS, membership verification, bounded retries, and CMTrace logging.</p>
-        <p class="card-links"><a href="https://vartaxe.github.io/ConfigMgr-OSD-AddComputerToADGroup/">Read the guide</a><a href="https://github.com/vartaxe/ConfigMgr-OSD-AddComputerToADGroup">View source</a></p>
-      </section>
-      <section class="card" aria-labelledby="logs-title">
-        <img class="card-icon" src="assets/osd-logs.svg" alt="" width="48" height="48" aria-hidden="true">
-        <p class="card-kicker">Diagnostics</p>
-        <h3 id="logs-title">Copy OSD logs to a file share</h3>
-        <p>Collect and archive deployment logs, then upload the ZIP to an SMB share with retries and remote byte-size verification.</p>
-        <p class="card-links"><a href="https://vartaxe.github.io/ConfigMgr-OSD-CopyOSDLogToFileShare/">Read the guide</a><a href="https://github.com/vartaxe/ConfigMgr-OSD-CopyOSDLogToFileShare">View source</a></p>
-      </section>
-      <section class="card" aria-labelledby="disk-title">
-        <img class="card-icon" src="assets/disk-layout.svg" alt="" width="48" height="48" aria-hidden="true">
-        <p class="card-kicker">WinPE storage</p>
-        <h3 id="disk-title">Disk partition layout</h3>
-        <p>Create a firmware-appropriate GPT or MBR layout in WinPE with fail-closed target selection and explicit safety checks.</p>
-        <p class="warning"><strong>Warning:</strong> this irreversibly cleans and repartitions the target disk.</p>
-        <p class="card-links"><a href="https://vartaxe.github.io/ConfigMgr-OSD-DiskPartitionLayout/">Read the guide</a><a href="https://github.com/vartaxe/ConfigMgr-OSD-DiskPartitionLayout">View source</a></p>
-      </section>
-    </div>
-    <div class="callout" role="note">
-      <strong>Validate before rollout.</strong> Live ConfigMgr, Active Directory, WinPE, and SMB testing has not been completed for these releases. Automated checks cover syntax, static analysis, and mocked scenarios only; validate in your own lab, using disposable hardware for disk-layout tests.
-    </div>
-    <h2 id="maintenance">Related maintenance</h2>
-    <div class="card maintenance-card">
-      <img class="card-icon" src="assets/driver-automation.svg" alt="" width="48" height="48" aria-hidden="true">
-      <p>Driver and BIOS package automation is maintained in <a href="https://github.com/vartaxe/DriverAutomationTool">Driver Automation Tool</a>, including the consolidated modern management scripts and vendor BIOS apply scripts.</p>
-      <p>The former standalone Modern Driver Management and Modern BIOS Management repositories are archived compatibility sources. New maintenance belongs in DAT.</p>
-      <p>Maintained forks retain their upstream licenses and attribution; the Driver Automation Tool license is not the MIT license used by the original OSD scripts.</p>
-    </div>
-    <h2 id="profile">About Claudio</h2>
-    <div class="card">
-      <p>I write PowerShell tools for repeatable Windows deployment jobs, with clear inputs, useful logs, and explicit outcomes. The original ConfigMgr OSD scripts are self-contained and MIT-licensed. Validate every tool against its own license and deployment guidance before rollout.</p>
-      <p><a href="https://github.com/vartaxe">GitHub profile</a> · <a href="mailto:vartaxe@outlook.com">Contact Claudio</a> · <a href="https://github.com/sponsors/vartaxe">Sponsor the maintenance</a></p>
-    </div>
-    <div class="callout" role="note">
-      <strong>Security and support.</strong> For bugs or usage questions, use the affected repository's support path. Report vulnerabilities privately through its security policy; do not disclose them in a public issue.
-    </div>
+    <section aria-labelledby="projects">
+      <p class="section-label">Selected work</p>
+      <h2 id="projects">Windows deployment tools</h2>
+      <p class="section-intro">Each project page links to its repository README for requirements, usage, compatibility, and validation details.</p>
+      <div class="grid">
+        <section class="card" aria-labelledby="ad-title">
+          <img class="card-icon" src="assets/ad-groups.svg" alt="" width="48" height="48" aria-hidden="true">
+          <p class="card-kicker">Active Directory</p>
+          <h3 id="ad-title">Add computers to AD groups</h3>
+          <p>Add a computer account to Active Directory groups during an OSD task sequence with Kerberos over LDAPS, membership verification, bounded retries, and CMTrace logging.</p>
+          <p class="card-links"><a href="https://github.com/vartaxe/ConfigMgr-OSD-AddComputerToADGroup#readme">Project README</a></p>
+        </section>
+        <section class="card" aria-labelledby="logs-title">
+          <img class="card-icon" src="assets/osd-logs.svg" alt="" width="48" height="48" aria-hidden="true">
+          <p class="card-kicker">Diagnostics</p>
+          <h3 id="logs-title">Copy OSD logs to a file share</h3>
+          <p>Collect and archive deployment logs, then upload the ZIP to an SMB share with retries and remote byte-size verification.</p>
+          <p class="card-links"><a href="https://github.com/vartaxe/ConfigMgr-OSD-CopyOSDLogToFileShare#readme">Project README</a></p>
+        </section>
+        <section class="card" aria-labelledby="disk-title">
+          <img class="card-icon" src="assets/disk-layout.svg" alt="" width="48" height="48" aria-hidden="true">
+          <p class="card-kicker">WinPE storage</p>
+          <h3 id="disk-title">Disk partition layout</h3>
+          <p>Create a firmware-appropriate GPT or MBR layout in WinPE with fail-closed target selection and explicit safety checks.</p>
+          <p class="warning"><strong>Warning:</strong> this irreversibly cleans and repartitions the target disk.</p>
+          <p class="card-links"><a href="https://github.com/vartaxe/ConfigMgr-OSD-DiskPartitionLayout#readme">Project README</a></p>
+        </section>
+      </div>
+    </section>
+    <section id="approach" aria-labelledby="approach-title">
+      <p class="section-label">How I work</p>
+      <h2 id="approach-title">Practical tools, stated limits</h2>
+      <div class="principles">
+        <article class="principle">
+          <h3>Built for the real environment</h3>
+          <p>Requirements and compatibility are documented so administrators can judge fit before adding a script to a task sequence.</p>
+        </article>
+        <article class="principle">
+          <h3>Safety before convenience</h3>
+          <p>Tools call out impactful behavior. The disk-layout script can irreversibly clean and repartition its selected target.</p>
+        </article>
+        <article class="principle">
+          <h3>Evidence, not promises</h3>
+          <p>Automated checks do not replace live ConfigMgr, Active Directory, WinPE, or SMB validation in your own environment.</p>
+        </article>
+      </div>
+    </section>
+    <section aria-labelledby="related-title">
+      <p class="section-label">Related project</p>
+      <h2 id="related-title">Driver Automation Tool</h2>
+      <div class="card related-card">
+        <img class="card-icon" src="assets/driver-automation.svg" alt="" width="48" height="48" aria-hidden="true">
+        <div>
+          <p><a href="https://github.com/vartaxe/DriverAutomationTool">Open the repository</a> for OEM driver and BIOS package automation for Configuration Manager and Intune.</p>
+          <p>This is a fork of the original project. Upstream authorship and licensing remain with the original project; the OSD utilities above have separate repositories and license terms.</p>
+        </div>
+      </div>
+    </section>
+    <section id="about" aria-labelledby="about-title">
+      <p class="section-label">About</p>
+      <h2 id="about-title">Claudio Mendes <span class="handle" translate="no">@vartaxe</span></h2>
+      <div class="card">
+        <p>I work on Windows endpoint automation and the practical details around OS deployment: repeatable steps, understandable logs, and clear failure behavior.</p>
+        <p><a href="https://github.com/vartaxe">GitHub profile</a> · <a href="mailto:vartaxe@outlook.com">Contact</a> · <a href="https://github.com/sponsors/vartaxe">Sponsor</a></p>
+      </div>
+    </section>
+    <p class="site-note">For security issues, use the private reporting path in the affected repository's security policy.</p>
   </main>
   <footer>
-    <p>Maintained by <a href="https://github.com/vartaxe">Claudio Mendes (<span translate="no">@vartaxe</span>)</a>. The root site is the canonical public hub.</p>
+    <p>Claudio Mendes · <a href="https://github.com/vartaxe">@vartaxe</a></p>
   </footer>
 </body>
 </html>
