@@ -39,6 +39,13 @@ jobs:
           html = (root / "index.html").read_text(encoding="utf-8")
           LocalAssetParser().feed(html)
 
+          legacy_redirect = root / "ConfigMgr-OSD" / "index.html"
+          if not legacy_redirect.is_file():
+              raise SystemExit("The legacy ConfigMgr-OSD URL must redirect to the canonical hub.")
+          redirect_html = legacy_redirect.read_text(encoding="utf-8")
+          if 'href="https://vartaxe.github.io/"' not in redirect_html or 'http-equiv="refresh"' not in redirect_html:
+              raise SystemExit("The legacy ConfigMgr-OSD page must provide a canonical link and redirect.")
+
           if "style-src 'self'" not in html or "img-src 'self'" not in html:
               raise SystemExit("The CSP must restrict styles and images to local assets.")
 

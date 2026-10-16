@@ -58,7 +58,7 @@
         <img class="card-icon" src="assets/osd-logs.svg" alt="" width="48" height="48" aria-hidden="true">
         <p class="card-kicker">Diagnostics</p>
         <h3 id="logs-title">Copy OSD logs to a file share</h3>
-        <p>Collect and archive deployment logs, then upload the verified ZIP to an SMB share with retries and remote size checks.</p>
+        <p>Collect and archive deployment logs, then upload the ZIP to an SMB share with retries and remote byte-size verification.</p>
         <p class="card-links"><a href="https://vartaxe.github.io/ConfigMgr-OSD-CopyOSDLogToFileShare/">Read the guide</a><a href="https://github.com/vartaxe/ConfigMgr-OSD-CopyOSDLogToFileShare">View source</a></p>
       </section>
       <section class="card" aria-labelledby="disk-title">
@@ -71,7 +71,7 @@
       </section>
     </div>
     <div class="callout" role="note">
-      <strong>Validate before rollout.</strong> Automated checks cover syntax, static analysis, and mocked scenarios. Live ConfigMgr, Active Directory, WinPE, and SMB testing remains environment-specific; use a lab and disposable hardware first.
+      <strong>Validate before rollout.</strong> Live ConfigMgr, Active Directory, WinPE, and SMB testing has not been completed for these releases. Automated checks cover syntax, static analysis, and mocked scenarios only; validate in your own lab, using disposable hardware for disk-layout tests.
     </div>
     <h2 id="maintenance">Related maintenance</h2>
     <div class="card maintenance-card">
