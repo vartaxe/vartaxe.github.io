@@ -1,0 +1,82 @@
+name: Validate site
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate local assets and SVG accessibility
+        shell: python
+        run: |
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.parse import urlparse
+          import xml.etree.ElementTree as ET
+          import re
+
+          root = Path(".")
+
+          class LocalAssetParser(HTMLParser):
+              def handle_starttag(self, tag, attrs):
+                  values = dict(attrs)
+                  for attribute in ("href", "src"):
+                      value = values.get(attribute)
+                      if not value or urlparse(value).scheme or value.startswith(("#", "mailto:")):
+                          continue
+                      path = root / value.split("?", 1)[0].split("#", 1)[0]
+                      if not path.is_file():
+                          raise SystemExit(f"Missing local asset: {value}")
+
+          html = (root / "index.html").read_text(encoding="utf-8")
+          LocalAssetParser().feed(html)
+
+          legacy_redirect = root / "ConfigMgr-OSD" / "index.html"
+          if not legacy_redirect.is_file():
+              raise SystemExit("The legacy ConfigMgr-OSD URL must redirect to the canonical hub.")
+          redirect_html = legacy_redirect.read_text(encoding="utf-8")
+          if 'href="https://vartaxe.github.io/"' not in redirect_html or 'http-equiv="refresh"' not in redirect_html:
+              raise SystemExit("The legacy ConfigMgr-OSD page must provide a canonical link and redirect.")
+
+          if "style-src 'self'" not in html or "img-src 'self'" not in html:
+              raise SystemExit("The CSP must restrict styles and images to local assets.")
+
+          for path in sorted((root / "assets").glob("*.svg")):
+              svg = ET.parse(path).getroot()
+              if svg.get("role") != "img":
+                  raise SystemExit(f"{path} is missing role=img")
+              labels = svg.get("aria-labelledby", "").split()
+              ids = {element.get("id") for element in svg.iter() if element.get("id")}
+              if len(labels) != 2 or not set(labels).issubset(ids):
+                  raise SystemExit(f"{path} has an invalid accessible label")
+
+          css = (root / "style.css").read_text(encoding="utf-8")
+          if "transition: all" in css:
+              raise SystemExit("Avoid transition: all.")
+          if "prefers-reduced-motion" not in css or ":focus-visible" not in css:
+              raise SystemExit("Reduced-motion and visible-focus styles are required.")
+
+          def luminance(color):
+              values = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+              linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4 for value in values]
+              return sum(value * weight for value, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+
+          light, dark = css.split("@media (prefers-color-scheme: dark)", 1)
+          colors = dict(re.findall(r"(--[\w-]+):\s*(#[0-9a-fA-F]{6})\s*;", light))
+          for theme, overrides in (("light", {}), ("dark", dict(re.findall(r"(--[\w-]+):\s*(#[0-9a-fA-F]{6})\s*;", dark)))):
+              palette = colors | overrides
+              values = sorted((luminance(palette["--link"]), luminance(palette["--on-link"])))
+              contrast = (values[1] + 0.05) / (values[0] + 0.05)
+              if contrast < 4.5:
+                  raise SystemExit(f"{theme} guide buttons fail WCAG AA text contrast: {contrast:.2f}:1")
+          if not re.search(r"\.card-links a:first-child\s*\{[^}]*color:\s*var\(--on-link\);", css):
+              raise SystemExit("Guide buttons must use the tested foreground token.")

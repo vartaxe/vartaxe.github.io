@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-labelledby="title desc">
+  <title id="title">Disk partition layout</title>
+  <desc id="desc">A disk divided into guarded partitions.</desc>
+  <rect width="48" height="48" rx="12" fill="#e3f2ff"/>
+  <rect x="8" y="10" width="32" height="27" rx="4" fill="#fff" stroke="#155799" stroke-width="3"/>
+  <path d="M17 11v25m10-25v25m-18-9h30" stroke="#159895" stroke-width="3"/>
+  <circle cx="36" cy="41" r="4" fill="#117865"/>
+</svg>

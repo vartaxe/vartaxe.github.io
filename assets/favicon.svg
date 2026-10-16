@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-labelledby="title desc">
+  <title id="title">vartaxe terminal</title>
+  <desc id="desc">A terminal prompt on a blue tile with a teal underline.</desc>
+  <rect width="48" height="48" rx="10" fill="#155799"/>
+  <path d="m11 15 9 9-9 9m15 0h11" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M10 42h28" stroke="#70dec5" stroke-width="3" stroke-linecap="round"/>
+</svg>
