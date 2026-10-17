@@ -40,6 +40,15 @@ jobs:
           html = (root / "index.html").read_text(encoding="utf-8")
           LocalAssetParser().feed(html)
 
+          legacy_redirect = root / "ConfigMgr-OSD" / "index.html"
+          if not legacy_redirect.is_file():
+              raise SystemExit("The legacy ConfigMgr-OSD URL must redirect to the canonical hub.")
+          redirect_html = legacy_redirect.read_text(encoding="utf-8")
+          if not re.search(r'<meta\s+http-equiv="refresh"\s+content="0;\s*url=https://vartaxe\.github\.io/"', redirect_html, re.IGNORECASE):
+              raise SystemExit("The legacy ConfigMgr-OSD page must redirect directly to the canonical hub.")
+          if '<link rel="canonical" href="https://vartaxe.github.io/">' not in redirect_html:
+              raise SystemExit("The legacy ConfigMgr-OSD page must identify the canonical hub.")
+
           if "Claudio Mendes" not in html or "Windows endpoint automation" not in html:
               raise SystemExit("The homepage must identify the maintainer and project focus.")
 
@@ -66,13 +75,22 @@ jobs:
               linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4 for value in values]
               return sum(value * weight for value, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
 
+          def contrast(foreground, background):
+              low, high = sorted((luminance(foreground), luminance(background)))
+              return (high + 0.05) / (low + 0.05)
+
           light, dark = css.split("@media (prefers-color-scheme: dark)", 1)
           colors = dict(re.findall(r"(--[\w-]+):\s*(#[0-9a-fA-F]{6})\s*;", light))
           for theme, overrides in (("light", {}), ("dark", dict(re.findall(r"(--[\w-]+):\s*(#[0-9a-fA-F]{6})\s*;", dark)))):
               palette = colors | overrides
-              values = sorted((luminance(palette["--link"]), luminance(palette["--on-link"])))
-              contrast = (values[1] + 0.05) / (values[0] + 0.05)
-              if contrast < 4.5:
-                  raise SystemExit(f"{theme} guide buttons fail WCAG AA text contrast: {contrast:.2f}:1")
+              for foreground, background, usage in (
+                  (palette["--link"], palette["--on-link"], "guide buttons"),
+                  (palette["--accent"], palette["--bg"], "section labels"),
+              ):
+                  ratio = contrast(foreground, background)
+                  if ratio < 4.5:
+                      raise SystemExit(f"{theme} {usage} fail WCAG AA text contrast: {ratio:.2f}:1")
+          if not re.search(r"\.section-label\s*\{[^}]*color:\s*var\(--accent\);", css):
+              raise SystemExit("Section labels must use the tested accent token.")
           if not re.search(r"\.card-links a:first-child\s*\{[^}]*color:\s*var\(--on-link\);", css):
               raise SystemExit("Guide buttons must use the tested foreground token.")
