@@ -469,6 +469,17 @@ continues inside this code span`
             self.assertEqual(
                 set(env_names), {"PORT", "HOST", "FEATURE", "MODE"})
 
+    def test_function_local_shell_assignment_does_not_hide_top_level_env_read(self):
+        text = (
+            "configure() {\n"
+            "  local API_TOKEN=placeholder\n"
+            '  echo "$API_TOKEN"\n'
+            "}\n"
+            'echo "$API_TOKEN"\n')
+
+        self.assertEqual(
+            DOCS_DRIFT.shell_env_reads(text), [("API_TOKEN", 5)])
+
     def test_shell_command_assignments_do_not_become_persistent_locals(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -1254,6 +1265,61 @@ continues inside this code span`
             self.assertEqual(len(broken), 1)
             self.assertIn("missing.png", broken[0]["detail"])
 
+    def test_fenced_blocks_inside_list_items_are_scanned_as_code(self):
+        text = (
+            "- ```sh\n"
+            "  npm run missing\n"
+            "  ```\n"
+            "1. A numbered item\n"
+            "\n"
+            "   ```md\n"
+            "   [hidden](missing-inside.md)\n"
+            "   ```\n"
+            "[visible](missing-outside.md)\n")
+
+        self.assertEqual(
+            [line for _, line in DOCS_DRIFT.fenced_blocks(text)],
+            ["npm run missing", "[hidden](missing-inside.md)"])
+        self.assertEqual(
+            DOCS_DRIFT.markdown_links(
+                DOCS_DRIFT.markdown_lines_without_code(text)),
+            [(9, "missing-outside.md")])
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "package.json").write_text(
+                '{"scripts": {}}\n', encoding="utf-8")
+            (repo / "README.md").write_text(text, encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["package.json", "README.md"])
+            findings = result["findings"]
+            self.assertIn("missing-script", {item["kind"] for item in findings})
+            broken = [item["detail"] for item in findings
+                      if item["kind"] == "broken-link"]
+            self.assertEqual(len(broken), 1)
+            self.assertIn("missing-outside.md", broken[0])
+
+    def test_fenced_block_ends_when_its_blockquote_container_ends(self):
+        text = (
+            "> ```sh\n"
+            "> npm run inside\n"
+            "Outside prose npm run not-a-command [visible](missing.md)\n")
+
+        self.assertEqual(
+            DOCS_DRIFT.fenced_blocks(text), [(2, "npm run inside")])
+        cleaned = DOCS_DRIFT.markdown_lines_without_code(text)
+        self.assertIn(
+            (3, "Outside prose npm run not-a-command [visible](missing.md)"),
+            cleaned)
+        self.assertEqual(
+            DOCS_DRIFT.markdown_links(cleaned), [(3, "missing.md")])
+
+    def test_nested_linked_image_destination_is_collected_once(self):
+        text = "[outer ![preview](preview.png)](target.md)"
+
+        self.assertEqual(
+            DOCS_DRIFT.markdown_links([(1, text)]),
+            [(1, "preview.png"), (1, "target.md")])
+
     def test_env_chdir_wrapper_is_conservatively_skipped(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -1467,6 +1533,39 @@ npm run build
 
             result = DOCS_DRIFT.build(
                 repo, ["package.json", "packages/web/package.json", "docs/commands.md"])
+
+            self.assertNotIn(
+                "missing-script",
+                {finding["kind"] for finding in result["findings"]})
+
+    def test_npm_workspace_path_selector_resolves_from_prefix_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            root_workspace = repo / "packages" / "app"
+            nested_workspace = repo / "tools" / "packages" / "app"
+            root_workspace.mkdir(parents=True)
+            nested_workspace.mkdir(parents=True)
+            (repo / "package.json").write_text(
+                '{"workspaces": ["packages/*"]}\n', encoding="utf-8")
+            (root_workspace / "package.json").write_text(
+                '{"name": "@acme/app", "scripts": {"root-only": "root"}}\n',
+                encoding="utf-8")
+            (repo / "tools" / "package.json").write_text(
+                '{"workspaces": ["packages/*"]}\n', encoding="utf-8")
+            (nested_workspace / "package.json").write_text(
+                '{"name": "@acme/app", "scripts": {"build": "build"}}\n',
+                encoding="utf-8")
+            (repo / "README.md").write_text(
+                "```sh\n"
+                "npm --prefix tools --workspace packages/app run build\n"
+                "npm --prefix tools --workspace @acme/app run build\n"
+                "```\n", encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, [
+                "package.json", "packages/app/package.json",
+                "tools/package.json", "tools/packages/app/package.json",
+                "README.md",
+            ])
 
             self.assertNotIn(
                 "missing-script",

@@ -245,9 +245,9 @@ def workspace_glob_matches(directory: str, pattern: str) -> bool:
     return bool(path_parts and pattern_parts) and match(0, 0)
 
 
-def npm_workspaces(repo: Path, npm: dict[str, set[str]],
-                   cwd: Path = Path(".")) -> list[set[str]] | None:
-    """Resolve workspaces from the nearest package root containing the invocation cwd."""
+def npm_workspace_directories(repo: Path, npm: dict[str, set[str]],
+                              cwd: Path = Path(".")) -> list[str] | None:
+    """Resolve workspace directories from the nearest workspace root."""
     invocation_dir = (repo / cwd).resolve()
     repo_root = repo.resolve()
     for root in (invocation_dir, *invocation_dir.parents):
@@ -290,10 +290,49 @@ def npm_workspaces(repo: Path, npm: dict[str, set[str]],
                 for directory in selected):
             continue
         return [
-            npm[root_rel + "/" + directory if root_rel else directory]
+            root_rel + "/" + directory if root_rel else directory
             for directory in selected
         ]
     return None
+
+
+def npm_workspaces(repo: Path, npm: dict[str, set[str]],
+                   cwd: Path = Path(".")) -> list[set[str]] | None:
+    """Resolve workspace scripts from the nearest package root containing cwd."""
+    directories = npm_workspace_directories(repo, npm, cwd)
+    if directories is None:
+        return None
+    return [npm[directory] for directory in directories]
+
+
+def markdown_list_item_content(line: str) -> tuple[int, str] | None:
+    """Return a list item's continuation indentation and content."""
+    match = re.match(
+        r"^([ ]{0,3})([-+*]|\d{1,9}[.)])(?:([ \t]+)(.*)|$)", line)
+    if not match:
+        return None
+    indent, marker, spacing, content = match.groups()
+    content_indent = len(indent) + len(marker) + (len(spacing) if spacing else 1)
+    return content_indent, content or ""
+
+
+def markdown_list_container_content(
+        content: str, depth: int, list_indent: int | None,
+        list_depth: int | None
+        ) -> tuple[str, int | None, int | None, int | None]:
+    """Normalize a line within a list item and retain its continuation indent."""
+    item = markdown_list_item_content(content)
+    if item:
+        indent, item_content = item
+        return item_content, indent, depth, indent
+    if list_indent is None or list_depth != depth:
+        return content, None, None, None
+    if not content.strip():
+        return content, list_indent, list_depth, list_indent
+    leading = len(content) - len(content.lstrip(" "))
+    if leading >= list_indent:
+        return content[list_indent:], list_indent, list_depth, list_indent
+    return content, None, None, None
 
 
 def fenced_blocks(text: str) -> list[tuple[int, str]]:
@@ -308,23 +347,58 @@ def fenced_block_groups(text: str) -> list[list[tuple[int, str]]]:
     fence_char = ""
     fence_length = 0
     fence_depth = 0
+    fence_list_indent: int | None = None
+    list_indent: int | None = None
+    list_depth: int | None = None
     for i, line in enumerate(text.splitlines(), start=1):
-        depth, content = markdown_blockquote_content(line)
-        marker = FENCE.match(content)
-        if marker and current is None:
-            current = []
-            groups.append(current)
-            fence_char = marker.group(1)[0]
-            fence_length = len(marker.group(1))
-            fence_depth = depth
-        elif current is not None and depth == fence_depth and marker and fence_closes(
-                content, marker, fence_char, fence_length):
-            current = None
-            fence_char = ""
-            fence_length = 0
-            fence_depth = 0
-        elif current is not None:
-            current.append((i, markdown_blockquote_content(line, fence_depth)[1]))
+        while True:
+            depth, content = markdown_blockquote_content(line)
+            if current is not None:
+                if depth < fence_depth:
+                    current = None
+                    fence_char = ""
+                    fence_length = 0
+                    fence_depth = 0
+                    fence_list_indent = None
+                    continue
+                content = markdown_blockquote_content(line, fence_depth)[1]
+                if fence_list_indent is not None and depth == fence_depth:
+                    if content.strip():
+                        leading = len(content) - len(content.lstrip(" "))
+                        if leading < fence_list_indent:
+                            current = None
+                            fence_char = ""
+                            fence_length = 0
+                            fence_depth = 0
+                            fence_list_indent = None
+                            list_indent = None
+                            list_depth = None
+                            continue
+                        content = content[fence_list_indent:]
+                marker = FENCE.match(content)
+                if (depth == fence_depth and marker and fence_closes(
+                        content, marker, fence_char, fence_length)):
+                    current = None
+                    fence_char = ""
+                    fence_length = 0
+                    fence_depth = 0
+                    fence_list_indent = None
+                else:
+                    current.append((i, content))
+                break
+
+            content, list_indent, list_depth, container_indent = (
+                markdown_list_container_content(
+                    content, depth, list_indent, list_depth))
+            marker = FENCE.match(content)
+            if marker:
+                current = []
+                groups.append(current)
+                fence_char = marker.group(1)[0]
+                fence_length = len(marker.group(1))
+                fence_depth = depth
+                fence_list_indent = container_indent
+            break
     return groups
 
 
@@ -436,10 +510,10 @@ def npm_package_scripts(npm: dict[str, set[str]], cwd: Path) -> set[str]:
 
 def npm_workspace_package_scripts(
         repo: Path, npm: dict[str, set[str]], workspace_names: dict[str, set[str]],
-        selector: str) -> set[str] | None:
+        selector: str, cwd: Path = Path(".")) -> set[str] | None:
     """Resolve a workspace selector by package directory or package name."""
     target = Path(selector.replace("\\", "/"))
-    candidate = target if target.is_absolute() else repo / target
+    candidate = target if target.is_absolute() else repo / cwd / target
     try:
         directory = candidate.resolve().relative_to(repo.resolve()).as_posix()
     except ValueError:
@@ -447,7 +521,24 @@ def npm_workspace_package_scripts(
     if directory in npm:
         return npm[directory]
 
-    matches = workspace_names.get(selector, set())
+    workspace_directories = npm_workspace_directories(repo, npm, cwd)
+    if workspace_directories is None:
+        invocation_dir = (repo / cwd).resolve()
+        package_root = next(
+            (root for root in (invocation_dir, *invocation_dir.parents)
+             if (root / "package.json").is_file()),
+            repo.resolve())
+        try:
+            root_rel = package_root.relative_to(repo.resolve()).as_posix()
+        except ValueError:
+            return None
+        if root_rel == ".":
+            root_rel = ""
+        workspace_directories = [
+            path for path in npm
+            if not root_rel or path.startswith(root_rel + "/")
+        ]
+    matches = workspace_names.get(selector, set()) & set(workspace_directories)
     if len(matches) == 1:
         return npm.get(next(iter(matches)))
     return None
@@ -800,7 +891,7 @@ def npm_commands_in_line(repo: Path, npm: dict[str, set[str]], line: str,
                 resolved = True
                 for selector in workspace_selectors:
                     scripts = npm_workspace_package_scripts(
-                        repo, npm, workspace_names or {}, selector)
+                        repo, npm, workspace_names or {}, selector, command_cwd)
                     if scripts is None:
                         resolved = False
                         break
@@ -974,23 +1065,55 @@ def markdown_lines_without_code(text: str) -> list[tuple[int, str]]:
     fence_char = ""
     fence_length = 0
     fence_depth = 0
+    fence_list_indent: int | None = None
+    list_indent: int | None = None
+    list_depth: int | None = None
     for i, line in enumerate(lines):
-        depth, content = markdown_blockquote_content(line)
-        marker = MARKDOWN_FENCE.match(content)
-        if fence_char:
-            if (depth == fence_depth and marker
-                    and fence_closes(content, marker, fence_char, fence_length)):
-                fence_char = ""
-                fence_length = 0
-                fence_depth = 0
-            fenced_lines[i] = True
-        elif marker:
-            fence_char = marker.group(1)[0]
-            fence_length = len(marker.group(1))
-            fence_depth = depth
-            fenced_lines[i] = True
-        elif content.startswith(("    ", "\t")):
-            fenced_lines[i] = True
+        while True:
+            depth, content = markdown_blockquote_content(line)
+            if fence_char:
+                if depth < fence_depth:
+                    fence_char = ""
+                    fence_length = 0
+                    fence_depth = 0
+                    fence_list_indent = None
+                    continue
+                content = markdown_blockquote_content(line, fence_depth)[1]
+                if fence_list_indent is not None and depth == fence_depth:
+                    if content.strip():
+                        leading = len(content) - len(content.lstrip(" "))
+                        if leading < fence_list_indent:
+                            fence_char = ""
+                            fence_length = 0
+                            fence_depth = 0
+                            fence_list_indent = None
+                            list_indent = None
+                            list_depth = None
+                            continue
+                        content = content[fence_list_indent:]
+                marker = MARKDOWN_FENCE.match(content)
+                if (depth == fence_depth and marker and fence_closes(
+                        content, marker, fence_char, fence_length)):
+                    fence_char = ""
+                    fence_length = 0
+                    fence_depth = 0
+                    fence_list_indent = None
+                fenced_lines[i] = True
+                break
+
+            content, list_indent, list_depth, container_indent = (
+                markdown_list_container_content(
+                    content, depth, list_indent, list_depth))
+            marker = MARKDOWN_FENCE.match(content)
+            if marker:
+                fence_char = marker.group(1)[0]
+                fence_length = len(marker.group(1))
+                fence_depth = depth
+                fence_list_indent = container_indent
+                fenced_lines[i] = True
+            elif content.startswith(("    ", "\t")):
+                fenced_lines[i] = True
+            break
 
     cleaned_lines = [list(line) for line in lines]
     segment_start = 0
@@ -1202,7 +1325,7 @@ def markdown_image_links(
         if "!" in label and "[" in label:
             links.extend(markdown_image_links(label, line_number, references))
         index = closing + 1
-    return links
+    return list(dict.fromkeys(links))
 
 
 def markdown_links(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
@@ -1264,7 +1387,7 @@ def markdown_links(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
             if reference in references:
                 links.append((line_number, references[reference]))
             index += 1
-    return links
+    return list(dict.fromkeys(links))
 
 
 def documented_script_exists(repo: Path, doc: str, candidate: str) -> bool:
@@ -1510,9 +1633,14 @@ def powershell_env_reads(text: str) -> list[tuple[str, int]]:
 def shell_env_reads(text: str) -> list[tuple[str, int]]:
     """Return shell parameter expansions outside comments and single-quoted text."""
     found = []
-    local_names: set[str] = set()
+    local_name_scopes: list[set[str]] = [set()]
+    function_start = re.compile(
+        r"^\s*(?:function\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*\(\s*\))?"
+        r"|[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\))\s*\{\s*$")
     for line_number, line in enumerate(text.splitlines(), start=1):
         command = strip_shell_comment(line)
+        if function_start.match(command):
+            local_name_scopes.append(set())
         for segment in shell_segments(command):
             stages = shell_pipeline_parts(segment)
             is_pipeline = len(stages) > 1
@@ -1554,15 +1682,17 @@ def shell_env_reads(text: str) -> list[tuple[str, int]]:
                     match = SHELL_ENV.match(stage, index)
                     if match:
                         name = match.group(1) or match.group(2)
-                        if name not in local_names:
+                        if not any(name in scope for scope in local_name_scopes):
                             found.append((name, line_number))
                         index = match.end()
                     else:
                         index += 1
                 assignment_only = bool(tokens) and len(assignment_tokens) == len(tokens)
                 if not is_pipeline and (declaration or assignment_only):
-                    local_names.update(
+                    local_name_scopes[-1].update(
                         token.split("=", 1)[0] for token in assignment_tokens)
+        if command.strip() == "}" and len(local_name_scopes) > 1:
+            local_name_scopes.pop()
     return found
 
 
