@@ -63,8 +63,8 @@ This document is a comprehensive checklist of items to verify during web design 
 
 ### Accessibility (WCAG Standards)
 
-- [ ] Body text: Contrast ratio 4.5:1 or higher (AA)
-- [ ] Large text (18px+ bold or 24px+): 3:1 or higher
+- [ ] Normal text: Contrast ratio 4.5:1 or higher (AA)
+- [ ] Large text (at least 18pt regular or 14pt bold; approximately 24px regular or 18.67px bold): 3:1 or higher (AA)
 - [ ] Interactive element borders: 3:1 or higher
 - [ ] Focus indicators: Sufficient contrast with background
 
