@@ -50,6 +50,33 @@ class DocsDriftTests(unittest.TestCase):
                 DOCS_DRIFT.env_names_from_code(repo, ["main.go"])["API_TOKEN"],
                 ["main.go:1", "main.go:2"])
 
+    def test_go_env_names_preserve_lowercase_and_mixed_case(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "main.go").write_text(
+                'port := os.Getenv("servicePort")\n'
+                'region, found := os.LookupEnv("mixed_region")\n',
+                encoding="utf-8")
+            (repo / "README.md").write_text(
+                "Configure `servicePort` and `mixed_region`.\n",
+                encoding="utf-8")
+
+            env_names = DOCS_DRIFT.env_names_from_code(repo, ["main.go"])
+            result = DOCS_DRIFT.build(repo, ["main.go", "README.md"])
+
+            self.assertEqual(
+                env_names,
+                {
+                    "servicePort": ["main.go:1"],
+                    "mixed_region": ["main.go:2"],
+                })
+            self.assertNotIn(
+                "documented-unused-env",
+                {finding["kind"] for finding in result["findings"]})
+            self.assertNotIn(
+                "undocumented-env",
+                {finding["kind"] for finding in result["findings"]})
+
     def test_non_python_env_scanner_ignores_comments_strings_and_writes(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -161,6 +188,24 @@ class DocsDriftTests(unittest.TestCase):
             self.assertNotIn(
                 "documented-unused-env",
                 {finding["kind"] for finding in result["findings"]})
+
+    def test_powershell_environment_provider_reads_exclude_writes_and_comments(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "settings.ps1").write_text(
+                "Get-Item Env:API_TOKEN\n"
+                "Get-ChildItem -Path 'Env:\\servicePort'\n"
+                "Set-Item Env:WRITE_ONLY value\n"
+                "# Get-Item Env:COMMENT_ONLY\n"
+                "'Get-Item Env:STRING_ONLY'\n",
+                encoding="utf-8")
+
+            self.assertEqual(
+                DOCS_DRIFT.env_names_from_code(repo, ["settings.ps1"]),
+                {
+                    "API_TOKEN": ["settings.ps1:1"],
+                    "servicePort": ["settings.ps1:2"],
+                })
 
     def test_powershell_get_environment_variable_target_argument_is_a_read(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1598,6 +1643,19 @@ continues inside this code span`
             self.assertNotIn(
                 "broken-link", {finding["kind"] for finding in result["findings"]})
 
+    def test_inline_link_title_is_not_rescanned_as_a_link(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "existing.md").write_text("# Existing\n", encoding="utf-8")
+            (repo / "README.md").write_text(
+                '[Guide](existing.md "See [example](missing.md)")\n',
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["README.md", "existing.md"])
+
+            self.assertNotIn(
+                "broken-link", {finding["kind"] for finding in result["findings"]})
+
     def test_indented_paragraph_continuation_links_are_checked(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -1701,6 +1759,54 @@ continues inside this code span`
             self.assertEqual(len(broken), 1)
             self.assertIn("missing.png", broken[0]["detail"])
 
+    def test_nested_shortcut_reference_image_inside_link_label_is_checked(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "existing.md").write_text("# Existing\n", encoding="utf-8")
+            (repo / "README.md").write_text(
+                "[outer ![preview]][outer]\n"
+                "[preview]: missing.png\n"
+                "[outer]: existing.md\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["README.md", "existing.md"])
+            broken = [
+                finding for finding in result["findings"]
+                if finding["kind"] == "broken-link"
+            ]
+
+            self.assertEqual(len(broken), 1)
+            self.assertIn("missing.png", broken[0]["detail"])
+
+    def test_html_comments_are_masked_while_code_spans_and_fences_are_respected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "README.md").write_text(
+                "<!-- [hidden](missing-comment.md)\n"
+                "[also hidden](missing-comment-too.md) -->\n"
+                "[visible](missing-visible.md)\n"
+                "`<!--` [after inline code](missing-after-code.md)\n"
+                "```md\n"
+                "<!-- [inside fence](missing-fenced.md) -->\n"
+                "```\n"
+                "[after fence](missing-after-fence.md)\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["README.md"])
+            broken = [
+                finding for finding in result["findings"]
+                if finding["kind"] == "broken-link"
+            ]
+
+            self.assertEqual(
+                [finding["detail"] for finding in broken],
+                [
+                    "relative link `missing-visible.md` does not resolve.",
+                    "relative link `missing-after-code.md` does not resolve.",
+                    "relative link `missing-after-fence.md` does not resolve.",
+                ])
+            self.assertEqual([finding["line"] for finding in broken], [3, 4, 8])
+
     def test_fenced_blocks_inside_list_items_are_scanned_as_code(self):
         text = (
             "- ```sh\n"
@@ -1733,6 +1839,42 @@ continues inside this code span`
                       if item["kind"] == "broken-link"]
             self.assertEqual(len(broken), 1)
             self.assertIn("missing-outside.md", broken[0])
+
+    def test_commands_in_language_fences_are_scanned_only_for_shell_languages(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "package.json").write_text(
+                '{"scripts": {}}\n', encoding="utf-8")
+            (repo / "README.md").write_text(
+                "```python\n"
+                'python = "3.12"\n'
+                "npm run missing-from-python\n"
+                "```\n"
+                "```sh\n"
+                "npm run missing-from-shell\n"
+                "```\n"
+                "```\n"
+                "npm run missing-from-unlabelled\n"
+                "```\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["package.json", "README.md"])
+            missing = [
+                finding for finding in result["findings"]
+                if finding["kind"] == "missing-script"
+            ]
+
+            self.assertEqual(
+                [(finding["line"], finding["detail"]) for finding in missing],
+                [
+                    (6, "documents `missing-from-shell`, which is not a script "
+                        "in every applicable package.json."),
+                    (9, "documents `missing-from-unlabelled`, which is not a script "
+                        "in every applicable package.json."),
+                ])
+            self.assertNotIn(
+                "missing-script-file",
+                {finding["kind"] for finding in result["findings"]})
 
     def test_fenced_block_ends_when_its_blockquote_container_ends(self):
         text = (

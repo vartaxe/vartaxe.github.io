@@ -83,6 +83,10 @@ CMD_SCRIPT = re.compile(
 CMD_SCRIPT_QUOTED = re.compile(
     r"(?:^|\s)(?:python3?|node|bash|sh|ruby|pwsh|powershell)\s+"
     r"(?:-File\s+)?(['\"])([A-Za-z0-9_./\\ -]+\.[A-Za-z0-9]+)\1", re.I)
+COMMAND_FENCE_LANGUAGES = {
+    "bash", "bat", "batch", "cmd", "fish", "powershell", "pwsh", "sh",
+    "shell", "zsh",
+}
 CD_COMMAND = re.compile(r"^(?:cd|pushd)\s+(['\"]?)([^'\"]+?)\1\s*$")
 POPD_COMMAND = re.compile(r"^popd\s*$")
 
@@ -106,8 +110,8 @@ ENV_IN_CODE = [
     re.compile(r"""process\.env\[\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]"""),
     re.compile(r"""os\.environ(?:\.get)?\[?\(?\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
     re.compile(r"""os\.getenv\(\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
-    re.compile(r"""os\.Getenv\(\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
-    re.compile(r"""os\.LookupEnv\(\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
+    re.compile(r"""os\.Getenv\(\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]"""),
+    re.compile(r"""os\.LookupEnv\(\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]"""),
     re.compile(r"""getenv\(\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
     re.compile(r"""ENV\[\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
     re.compile(r"""Deno\.env\.get\(\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
@@ -124,6 +128,10 @@ POWERSHELL_GET_ENVIRONMENT_VARIABLE = re.compile(
     r"""\[\s*(?:System\.)?Environment\s*\]\s*::\s*"""
     r"""GetEnvironmentVariable\s*\(\s*(['"])([A-Za-z_][A-Za-z0-9_()]*)\1(?=\s*(?:,|\)))""",
     re.I)
+POWERSHELL_ENV_PROVIDER_READ = re.compile(
+    r"""(?i)\b(?:Get-Item|Get-ChildItem)\s+"""
+    r"""(?:(?:-Path|-LiteralPath)\s+)?(['"]?)Env:\\?"""
+    r"""([A-Za-z_][A-Za-z0-9_]*)\1""")
 SHELL_ENV = re.compile(
     r"\$(?:\{([A-Z][A-Z0-9_]*)(?=[:+\-?}=])|([A-Z][A-Z0-9_]*)\b)")
 
@@ -345,12 +353,13 @@ def markdown_list_container_content(
 
 def fenced_blocks(text: str) -> list[tuple[int, str]]:
     """Yield (line_number, line) for lines inside fenced code blocks."""
-    return [line for group in fenced_block_groups(text) for line in group]
+    return [line for _, group in fenced_block_groups(text) for line in group]
 
 
-def fenced_block_groups(text: str) -> list[list[tuple[int, str]]]:
-    """Return fenced code lines grouped so shell state does not leak between blocks."""
-    groups: list[list[tuple[int, str]]] = []
+def fenced_block_groups(
+        text: str) -> list[tuple[str | None, list[tuple[int, str]]]]:
+    """Return fenced blocks with their language metadata and grouped contents."""
+    groups: list[tuple[str | None, list[tuple[int, str]]]] = []
     current: list[tuple[int, str]] | None = None
     fence_char = ""
     fence_length = 0
@@ -401,7 +410,9 @@ def fenced_block_groups(text: str) -> list[list[tuple[int, str]]]:
             marker = FENCE.match(content)
             if marker:
                 current = []
-                groups.append(current)
+                info = content[marker.end():].strip()
+                language = info.split(None, 1)[0].lower() if info else None
+                groups.append((language, current))
                 fence_char = marker.group(1)[0]
                 fence_length = len(marker.group(1))
                 fence_depth = depth
@@ -1221,11 +1232,37 @@ def markdown_lines_without_code(text: str) -> list[tuple[int, str]]:
 
         segment_start = segment_end
 
-    return [
+    result = [
         (i, "" if fenced_lines[i - 1] else
          markdown_blockquote_content("".join(line))[1])
         for i, line in enumerate(cleaned_lines, start=1)
     ]
+    in_comment = False
+    for index, (line_number, line) in enumerate(result):
+        chars = list(line)
+        cursor = 0
+        while cursor < len(chars):
+            if in_comment:
+                end = line.find("-->", cursor)
+                if end < 0:
+                    chars[cursor:] = [" "] * (len(chars) - cursor)
+                    break
+                chars[cursor:end + 3] = [" "] * (end + 3 - cursor)
+                cursor = end + 3
+                in_comment = False
+                continue
+            start = line.find("<!--", cursor)
+            if start < 0:
+                break
+            end = line.find("-->", start + 4)
+            if end < 0:
+                chars[start:] = [" "] * (len(chars) - start)
+                in_comment = True
+                break
+            chars[start:end + 3] = [" "] * (end + 3 - start)
+            cursor = end + 3
+        result[index] = (line_number, "".join(chars))
+    return result
 
 
 def markdown_reference_label(label: str) -> str:
@@ -1375,6 +1412,10 @@ def markdown_image_links(
                 target = references.get(markdown_reference_label(reference_label))
                 if target:
                     links.append((line_number, target))
+        else:
+            target = references.get(markdown_reference_label(label))
+            if target:
+                links.append((line_number, target))
         if "!" in label and "[" in label:
             links.extend(markdown_image_links(label, line_number, references))
         index = closing + 1
@@ -1483,7 +1524,9 @@ def markdown_links(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
                 destination = markdown_link_destination(text, after + 1)
                 if destination:
                     links.append((line_number, destination[0]))
-                index += 1
+                    index = destination[1]
+                else:
+                    index += 1
                 continue
 
             reference = None
@@ -1852,6 +1895,12 @@ def powershell_env_reads(text: str) -> list[tuple[str, int]]:
             continue
 
         match = POWERSHELL_GET_ENVIRONMENT_VARIABLE.match(text, index)
+        if match:
+            found.append((match.group(2), line))
+            index = match.end()
+            continue
+
+        match = POWERSHELL_ENV_PROVIDER_READ.match(text, index)
         if match:
             found.append((match.group(2), line))
             index = match.end()
@@ -2401,7 +2450,9 @@ def build(repo: Path, files: list[str], check_paths: bool = False) -> dict:
             continue
 
         # 1. commands
-        for block in fenced_block_groups(text):
+        for language, block in fenced_block_groups(text):
+            if language and language not in COMMAND_FENCE_LANGUAGES:
+                continue
             npm_cwd = documentation_npm_cwd(doc, npm_scripts)
             npm_directory_stack: list[Path | None] = []
             make_cwd = Path(".")
