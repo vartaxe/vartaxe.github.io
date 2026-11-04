@@ -101,8 +101,8 @@ PLACEHOLDER = re.compile(
     re.I)
 
 ENV_IN_CODE = [
-    re.compile(r"process\.env\.([A-Z][A-Z0-9_]*)"),
-    re.compile(r"""process\.env\[\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
+    re.compile(r"process\.env\.([A-Za-z_][A-Za-z0-9_]*)"),
+    re.compile(r"""process\.env\[\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]"""),
     re.compile(r"""os\.environ(?:\.get)?\[?\(?\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
     re.compile(r"""os\.getenv\(\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
     re.compile(r"""os\.Getenv\(\s*['"]([A-Z][A-Z0-9_]*)['"]"""),
@@ -114,14 +114,14 @@ ENV_IN_CODE = [
 ENV_NAME = re.compile(r"\b([A-Z][A-Z0-9_]{2,})\b")
 ENV_SAMPLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 JS_ENV_ACCESS = re.compile(
-    r"""^\s*process\.env(?:\.([A-Z][A-Z0-9_]*)|"""
-    r"""\[\s*(['"])([A-Z][A-Z0-9_]*)\2\s*\])\s*$""")
+    r"""^\s*process\.env(?:\.([A-Za-z_][A-Za-z0-9_]*)|"""
+    r"""\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\2\s*\])\s*$""")
 POWERSHELL_ENV = re.compile(
     r"(?i)\$(?:env:([A-Za-z_][A-Za-z0-9_]*)|"
     r"\{env:([A-Za-z_][A-Za-z0-9_().-]*)\})")
 POWERSHELL_GET_ENVIRONMENT_VARIABLE = re.compile(
     r"""\[\s*(?:System\.)?Environment\s*\]\s*::\s*"""
-    r"""GetEnvironmentVariable\s*\(\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\)""",
+    r"""GetEnvironmentVariable\s*\(\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1(?=\s*(?:,|\)))""",
     re.I)
 SHELL_ENV = re.compile(
     r"\$(?:\{([A-Z][A-Z0-9_]*)(?=[:+\-?}=])|([A-Z][A-Z0-9_]*)\b)")
@@ -1631,8 +1631,134 @@ def script_exists_at(repo: Path, cwd: Path, candidate: str) -> bool:
     return target.is_file()
 
 
+def powershell_subexpression_end(text: str, start: int,
+                                 limit: int | None = None) -> int | None:
+    """Find the closing parenthesis for a PowerShell ``$()`` expression."""
+    end = len(text) if limit is None else min(limit, len(text))
+    depth = 1
+    modes = ["code"]
+    subexpression_depths: list[int] = []
+    block_depth = 0
+    line_comment = False
+    index = start + 2
+
+    while index < end:
+        mode = modes[-1]
+        char = text[index]
+
+        if mode == "single":
+            if text.startswith("''", index):
+                index += 2
+            elif char == "'":
+                modes.pop()
+                index += 1
+            else:
+                index += 1
+            continue
+
+        if mode == "double":
+            if char == "`":
+                index += 2
+            elif char == '"':
+                modes.pop()
+                index += 1
+            elif text.startswith("$(", index):
+                subexpression_depths.append(depth)
+                depth += 1
+                modes.append("subexpression")
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if block_depth:
+            if text.startswith("<#", index):
+                block_depth += 1
+                index += 2
+            elif text.startswith("#>", index):
+                block_depth -= 1
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if line_comment:
+            if char == "\n":
+                line_comment = False
+            index += 1
+            continue
+
+        if char == "`":
+            index += 2
+        elif text.startswith("<#", index):
+            block_depth = 1
+            index += 2
+        elif char == "#":
+            line_comment = True
+            index += 1
+        elif char == "'":
+            modes.append("single")
+            index += 1
+        elif char == '"':
+            modes.append("double")
+            index += 1
+        elif text.startswith("$(", index):
+            depth += 1
+            index += 2
+        elif char == "(":
+            depth += 1
+            index += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+            if mode == "subexpression" and depth == subexpression_depths[-1]:
+                modes.pop()
+                subexpression_depths.pop()
+            index += 1
+        else:
+            index += 1
+
+    return None
+
+
+def powershell_expandable_env_reads(text: str, start: int, end: int,
+                                    line: int) -> list[tuple[str, int]]:
+    """Return environment references expanded from a PowerShell string range."""
+    found = []
+    index = start
+    while index < end:
+        if text[index] == "`":
+            if index + 1 < end and text[index + 1] == "\n":
+                line += 1
+            index += 2
+            continue
+
+        if text.startswith("$(", index):
+            closing = powershell_subexpression_end(text, index, end)
+            if closing is not None:
+                for name, sub_line in powershell_env_reads(text[index + 2:closing]):
+                    found.append((name, line + sub_line - 1))
+                line += text[index:closing + 1].count("\n")
+                index = closing + 1
+                continue
+            index += 2
+            continue
+
+        match = POWERSHELL_ENV.match(text, index)
+        if match:
+            found.append((match.group(1) or match.group(2), line))
+            index = match.end()
+        else:
+            if text[index] == "\n":
+                line += 1
+            index += 1
+
+    return found
+
+
 def powershell_env_reads(text: str) -> list[tuple[str, int]]:
-    """Return PowerShell environment references outside comments and assignments."""
+    """Return environment reads outside comments and assignments."""
     found: list[tuple[str, int]] = []
     index = 0
     line = 1
@@ -1673,33 +1799,23 @@ def powershell_env_reads(text: str) -> list[tuple[str, int]]:
             quote = text[index + 1]
             newline = text.find("\n", index + 2)
             if newline != -1 and not text[index + 2:newline].strip():
-                index = newline + 1
-                line += 1
+                block_start = index
                 terminator = quote + "@"
-                while index < length:
-                    line_end = text.find("\n", index)
+                content_start = newline + 1
+                terminator_start = content_start
+                while terminator_start < length:
+                    line_end = text.find("\n", terminator_start)
                     if line_end == -1:
                         line_end = length
-                    if text.startswith(terminator, index):
-                        index = line_end + (line_end < length)
-                        if line_end < length:
-                            line += 1
+                    if text.startswith(terminator, terminator_start):
                         break
-                    if quote == '"':
-                        cursor = index
-                        while cursor < line_end:
-                            if text[cursor] == "`":
-                                cursor += 2
-                            else:
-                                match = POWERSHELL_ENV.match(text, cursor)
-                                if match:
-                                    found.append((match.group(1) or match.group(2), line))
-                                    cursor = match.end()
-                                else:
-                                    cursor += 1
-                    index = line_end + (line_end < length)
-                    if line_end < length:
-                        line += 1
+                    terminator_start = line_end + (line_end < length)
+                if quote == '"':
+                    found.extend(powershell_expandable_env_reads(
+                        text, content_start, terminator_start, line + 1))
+                block_end = text.find("\n", terminator_start)
+                index = length if block_end == -1 else block_end + 1
+                line += text[block_start:index].count("\n")
                 continue
 
         if char == "'":
@@ -1717,24 +1833,22 @@ def powershell_env_reads(text: str) -> list[tuple[str, int]]:
             continue
 
         if char == '"':
-            index += 1
-            while index < length:
-                if text[index] == "`":
-                    if index + 1 < length and text[index + 1] == "\n":
-                        line += 1
-                    index += 2
-                elif text[index] == '"':
-                    index += 1
+            string_start = index + 1
+            cursor = string_start
+            while cursor < length:
+                if text[cursor] == "`":
+                    cursor += 2
+                elif text.startswith("$(", cursor):
+                    closing = powershell_subexpression_end(text, cursor)
+                    cursor = closing + 1 if closing is not None else cursor + 2
+                elif text[cursor] == '"':
                     break
                 else:
-                    match = POWERSHELL_ENV.match(text, index)
-                    if match:
-                        found.append((match.group(1) or match.group(2), line))
-                        index = match.end()
-                    else:
-                        if text[index] == "\n":
-                            line += 1
-                        index += 1
+                    cursor += 1
+            found.extend(powershell_expandable_env_reads(
+                text, string_start, cursor, line))
+            line += text[string_start:cursor].count("\n")
+            index = cursor + 1 if cursor < length else cursor
             continue
 
         match = POWERSHELL_GET_ENVIRONMENT_VARIABLE.match(text, index)
@@ -2087,8 +2201,11 @@ def env_names_documented(repo: Path, files: list[str],
     return documented
 
 
-def newest_commit_epoch(repo: Path, pathspec: str) -> int | None:
-    out = run_git(["log", "-1", "--format=%at", "--", pathspec], repo)
+def newest_commit_epoch(repo: Path, pathspec: str | list[str]) -> int | None:
+    pathspecs = [pathspec] if isinstance(pathspec, str) else pathspec
+    if not pathspecs:
+        return None
+    out = run_git(["log", "-1", "--format=%at", "--", *pathspecs], repo)
     if not out or not out.strip().isdigit():
         return None
     return int(out.strip())
@@ -2257,10 +2374,8 @@ def build(repo: Path, files: list[str], check_paths: bool = False) -> dict:
                 source=readers[0])
 
     # 5. staleness
-    code_dirs = {str(Path(f).parent).replace("\\", "/") for f in files
-                 if Path(f).suffix in CODE_EXTS}
-    newest_code = max((e for e in (newest_commit_epoch(repo, d) for d in list(code_dirs)[:40])
-                       if e), default=None)
+    code_files = [f for f in files if Path(f).suffix.lower() in CODE_EXTS]
+    newest_code = newest_commit_epoch(repo, code_files)
     if newest_code:
         for doc in docs:
             doc_epoch = newest_commit_epoch(repo, doc)

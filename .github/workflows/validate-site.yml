@@ -37,6 +37,21 @@ jobs:
                       if not path.is_file():
                           raise SystemExit(f"Missing local asset: {value}")
 
+          class LegacyRedirectParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.refresh_contents = []
+                  self.canonical_hrefs = []
+
+              def handle_starttag(self, tag, attrs):
+                  values = dict(attrs)
+                  if (tag == "meta"
+                          and (values.get("http-equiv") or "").lower() == "refresh"):
+                      self.refresh_contents.append(values.get("content") or "")
+                  elif (tag == "link"
+                        and "canonical" in (values.get("rel") or "").lower().split()):
+                      self.canonical_hrefs.append(values.get("href") or "")
+
           html = (root / "index.html").read_text(encoding="utf-8")
           LocalAssetParser().feed(html)
 
@@ -44,9 +59,14 @@ jobs:
           if not legacy_redirect.is_file():
               raise SystemExit("The legacy ConfigMgr-OSD URL must redirect to the canonical hub.")
           redirect_html = legacy_redirect.read_text(encoding="utf-8")
-          if not re.search(r'<meta\s+http-equiv="refresh"\s+content="0;\s*url=https://vartaxe\.github\.io/"', redirect_html, re.IGNORECASE):
+          redirect_parser = LegacyRedirectParser()
+          redirect_parser.feed(redirect_html)
+          if not any(re.fullmatch(
+                  r"0;\s*url=https://vartaxe\.github\.io/",
+                  content, re.IGNORECASE)
+                  for content in redirect_parser.refresh_contents):
               raise SystemExit("The legacy ConfigMgr-OSD page must redirect directly to the canonical hub.")
-          if '<link rel="canonical" href="https://vartaxe.github.io/">' not in redirect_html:
+          if "https://vartaxe.github.io/" not in redirect_parser.canonical_hrefs:
               raise SystemExit("The legacy ConfigMgr-OSD page must identify the canonical hub.")
 
           if "Claudio Mendes" not in html or "Windows endpoint automation" not in html:

@@ -95,6 +95,45 @@ class DocsDriftTests(unittest.TestCase):
                 "documented-unused-env",
                 {finding["kind"] for finding in result["findings"]})
 
+    def test_powershell_get_environment_variable_target_argument_is_a_read(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "settings.ps1").write_text(
+                "[Environment]::GetEnvironmentVariable('API_TOKEN', 'User')\n",
+                encoding="utf-8")
+            (repo / "README.md").write_text(
+                "Configure `API_TOKEN` before running the script.\n",
+                encoding="utf-8")
+
+            env_names = DOCS_DRIFT.env_names_from_code(repo, ["settings.ps1"])
+            result = DOCS_DRIFT.build(
+                repo, ["settings.ps1", "README.md"])
+
+            self.assertEqual(env_names, {"API_TOKEN": ["settings.ps1:1"]})
+            self.assertNotIn(
+                "documented-unused-env",
+                {finding["kind"] for finding in result["findings"]})
+
+    def test_powershell_subexpressions_are_scanned_in_expandable_strings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "settings.ps1").write_text(
+                '$message = "token=$([Environment]::GetEnvironmentVariable(\'API_TOKEN\'))"\n'
+                '$message = @"\n'
+                'token=$([System.Environment]::GetEnvironmentVariable("HOST", "User"))\n'
+                '"@\n'
+                '$message = "[Environment]::GetEnvironmentVariable(\'STRING_ONLY\')"\n',
+                encoding="utf-8")
+
+            env_names = DOCS_DRIFT.env_names_from_code(repo, ["settings.ps1"])
+
+            self.assertEqual(
+                env_names,
+                {
+                    "API_TOKEN": ["settings.ps1:1"],
+                    "HOST": ["settings.ps1:3"],
+                })
+
     def test_powershell_escaped_env_references_are_not_reads(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -526,6 +565,27 @@ continues inside this code span`
 
             result = DOCS_DRIFT.build(repo, ["main.py", "README.md"])
 
+            self.assertNotIn(
+                "undocumented-env",
+                {finding["kind"] for finding in result["findings"]})
+
+    def test_mixed_case_javascript_env_names_match_code_and_docs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "main.js").write_text(
+                "process.env.npm_config_registry; "
+                "process.env.servicePort;\n",
+                encoding="utf-8")
+            (repo / "README.md").write_text(
+                "Configure `process.env.npm_config_registry` and "
+                "`process.env.servicePort`.\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["main.js", "README.md"])
+
+            self.assertNotIn(
+                "documented-unused-env",
+                {finding["kind"] for finding in result["findings"]})
             self.assertNotIn(
                 "undocumented-env",
                 {finding["kind"] for finding in result["findings"]})
@@ -2193,6 +2253,34 @@ npm run build
             self.assertEqual(len(missing_scripts), 1)
             self.assertIn("build", missing_scripts[0]["detail"])
             self.assertEqual(missing_scripts[0]["line"], 2)
+
+    def test_staleness_uses_all_source_file_paths(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            source_files = [f"src/module_{index}.py" for index in range(41)]
+            files = source_files + ["src/README.md", "docs/guide.md"]
+            for rel in files:
+                path = repo / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+
+            def commit_epoch(_repo, pathspec):
+                if isinstance(pathspec, list):
+                    self.assertEqual(pathspec, source_files)
+                    return 1_000_000_000
+                return {
+                    "src": 1_020_000_000,
+                    "src/README.md": 1_020_000_000,
+                    "docs/guide.md": 1_000_000_000,
+                }.get(pathspec)
+
+            with patch.object(
+                    DOCS_DRIFT, "newest_commit_epoch", side_effect=commit_epoch):
+                result = DOCS_DRIFT.build(repo, files)
+
+            self.assertNotIn(
+                "stale-doc",
+                {finding["kind"] for finding in result["findings"]})
 
 
 if __name__ == "__main__":
