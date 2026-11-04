@@ -114,6 +114,26 @@ class DocsDriftTests(unittest.TestCase):
                 "documented-unused-env",
                 {finding["kind"] for finding in result["findings"]})
 
+    def test_powershell_get_environment_variable_allows_parentheses(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "settings.ps1").write_text(
+                "[Environment]::GetEnvironmentVariable('ProgramFiles(x86)')\n",
+                encoding="utf-8")
+            (repo / "README.md").write_text(
+                "Configure `ProgramFiles(x86)` before running the script.\n",
+                encoding="utf-8")
+
+            env_names = DOCS_DRIFT.env_names_from_code(repo, ["settings.ps1"])
+            result = DOCS_DRIFT.build(
+                repo, ["settings.ps1", "README.md"])
+
+            self.assertEqual(
+                env_names, {"ProgramFiles(x86)": ["settings.ps1:1"]})
+            self.assertNotIn(
+                "documented-unused-env",
+                {finding["kind"] for finding in result["findings"]})
+
     def test_powershell_subexpressions_are_scanned_in_expandable_strings(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -132,6 +152,24 @@ class DocsDriftTests(unittest.TestCase):
                 {
                     "API_TOKEN": ["settings.ps1:1"],
                     "HOST": ["settings.ps1:3"],
+                })
+
+    def test_powershell_code_after_here_string_terminator_is_scanned(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "settings.ps1").write_text(
+                '$message = @"\n'
+                'literal=$env:HERE_STRING_READ\n'
+                '"@; Write-Output $env:API_TOKEN\n'
+                'Write-Output $env:AFTER_TOKEN\n',
+                encoding="utf-8")
+
+            self.assertEqual(
+                DOCS_DRIFT.env_names_from_code(repo, ["settings.ps1"]),
+                {
+                    "HERE_STRING_READ": ["settings.ps1:2"],
+                    "API_TOKEN": ["settings.ps1:3"],
+                    "AFTER_TOKEN": ["settings.ps1:4"],
                 })
 
     def test_powershell_escaped_env_references_are_not_reads(self):
@@ -394,6 +432,18 @@ continues inside this code span`
             ]
             self.assertEqual(len(broken), 1)
             self.assertIn("guide:v2.md", broken[0]["detail"])
+
+    def test_html_character_reference_in_link_destination_is_decoded(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "a&b.md").write_text("# Guide\n", encoding="utf-8")
+            (repo / "README.md").write_text(
+                "[Guide](a&amp;b.md)\n", encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["README.md", "a&b.md"])
+
+            self.assertNotIn(
+                "broken-link", {finding["kind"] for finding in result["findings"]})
 
     def test_markdown_links_parse_parenthesized_titles(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -662,6 +712,26 @@ continues inside this code span`
 
             self.assertEqual(
                 set(env_names), {"PORT", "HOST", "FEATURE", "MODE"})
+
+    def test_shell_loop_variables_are_not_treated_as_environment_reads(self):
+        text = (
+            "for FILE in *.txt; do echo \"$FILE\"; echo \"$API_TOKEN\"; done\n"
+            "while IFS= read -r LINE; do echo \"$LINE\"; echo \"$HOST\"; done\n")
+
+        self.assertEqual(
+            DOCS_DRIFT.shell_env_reads(text),
+            [("API_TOKEN", 1), ("HOST", 2)])
+
+    def test_shell_read_bindings_are_not_treated_as_environment_reads(self):
+        text = (
+            "read -r FILE\n"
+            "echo \"$FILE\"\n"
+            "read -a ITEMS\n"
+            "echo \"$ITEMS\"\n"
+            "read\n"
+            "echo \"$REPLY\"\n")
+
+        self.assertEqual(DOCS_DRIFT.shell_env_reads(text), [])
 
     def test_function_local_shell_assignment_does_not_hide_top_level_env_read(self):
         text = (
@@ -2281,6 +2351,51 @@ npm run build
             self.assertNotIn(
                 "stale-doc",
                 {finding["kind"] for finding in result["findings"]})
+
+    def test_powershell_only_source_files_are_checked_for_staleness(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            source_files = ["scripts/setup.ps1", "modules/config.psm1", "data/defaults.psd1"]
+            files = source_files + ["README.md"]
+            for rel in files:
+                path = repo / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+
+            def commit_epoch(_repo, pathspec):
+                if isinstance(pathspec, list):
+                    self.assertEqual(pathspec, source_files)
+                    return 1_020_000_000
+                if pathspec == "README.md":
+                    return 1_000_000_000
+                return None
+
+            with patch.object(
+                    DOCS_DRIFT, "newest_commit_epoch", side_effect=commit_epoch):
+                result = DOCS_DRIFT.build(repo, files)
+
+            stale_docs = [
+                finding for finding in result["findings"]
+                if finding["kind"] == "stale-doc"
+            ]
+            self.assertEqual([finding["doc"] for finding in stale_docs], ["README.md"])
+
+    def test_oversized_documentation_is_warned_and_not_counted_as_checked(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "README.md").write_text("small doc\n", encoding="utf-8")
+            large_doc = repo / "docs" / "large-guide.md"
+            large_doc.parent.mkdir()
+            large_doc.write_bytes(b"x" * (DOCS_DRIFT.MAX_READ + 1))
+
+            with patch.object(DOCS_DRIFT, "warnings", []):
+                result = DOCS_DRIFT.build(
+                    repo, ["README.md", "docs/large-guide.md"])
+
+            self.assertEqual(result["totals"]["docs_checked"], 1)
+            self.assertEqual(len(result["warnings"]), 1)
+            self.assertIn("docs/large-guide.md", result["warnings"][0])
+            self.assertIn("large-guide.md", DOCS_DRIFT.render(result, top=30))
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import ast
 import fnmatch
+import html
 import json
 import os
 import re
@@ -121,7 +122,7 @@ POWERSHELL_ENV = re.compile(
     r"\{env:([A-Za-z_][A-Za-z0-9_().-]*)\})")
 POWERSHELL_GET_ENVIRONMENT_VARIABLE = re.compile(
     r"""\[\s*(?:System\.)?Environment\s*\]\s*::\s*"""
-    r"""GetEnvironmentVariable\s*\(\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1(?=\s*(?:,|\)))""",
+    r"""GetEnvironmentVariable\s*\(\s*(['"])([A-Za-z_][A-Za-z0-9_()]*)\1(?=\s*(?:,|\)))""",
     re.I)
 SHELL_ENV = re.compile(
     r"\$(?:\{([A-Z][A-Z0-9_]*)(?=[:+\-?}=])|([A-Z][A-Z0-9_]*)\b)")
@@ -1813,8 +1814,7 @@ def powershell_env_reads(text: str) -> list[tuple[str, int]]:
                 if quote == '"':
                     found.extend(powershell_expandable_env_reads(
                         text, content_start, terminator_start, line + 1))
-                block_end = text.find("\n", terminator_start)
-                index = length if block_end == -1 else block_end + 1
+                index = min(terminator_start + len(terminator), length)
                 line += text[block_start:index].count("\n")
                 continue
 
@@ -1891,6 +1891,44 @@ def shell_env_reads(text: str) -> list[tuple[str, int]]:
                 tokens = shell_tokens(stage)
                 assignment_tokens = []
                 index = 0
+                if (len(tokens) > 1 and tokens[0] in {"for", "select"}
+                        and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", tokens[1])):
+                    local_name_scopes[-1].add(tokens[1])
+
+                command_index = 0
+                while command_index < len(tokens) and tokens[command_index] in {
+                        "while", "until", "if", "then", "do", "!"}:
+                    command_index += 1
+                while (command_index < len(tokens)
+                       and SHELL_ASSIGNMENT.fullmatch(tokens[command_index])):
+                    command_index += 1
+                if command_index < len(tokens) and tokens[command_index] == "read":
+                    read_index = command_index + 1
+                    read_names = []
+                    while read_index < len(tokens):
+                        token = tokens[read_index]
+                        if token == "--":
+                            read_index += 1
+                            break
+                        if token == "-a" or token == "-A":
+                            read_index += 1
+                            if read_index < len(tokens):
+                                read_names.append(tokens[read_index])
+                                read_index += 1
+                            continue
+                        if token in {"-d", "-n", "-N", "-p", "-t", "-u"}:
+                            read_index += 2
+                            continue
+                        if token.startswith("-"):
+                            read_index += 1
+                            continue
+                        break
+                    read_names.extend(tokens[read_index:])
+                    if not read_names:
+                        read_names.append("REPLY")
+                    local_name_scopes[-1].update(
+                        name for name in read_names
+                        if re.fullmatch(r"[A-Z][A-Z0-9_]*", name))
                 while index < len(tokens) and SHELL_ASSIGNMENT.fullmatch(tokens[index]):
                     assignment_tokens.append(tokens[index])
                     index += 1
@@ -2223,8 +2261,22 @@ def build(repo: Path, files: list[str], check_paths: bool = False) -> dict:
     npm_scripts, make_targets = available_commands(repo, files)
     workspace_names = npm_workspace_names(repo, files)
     all_npm = set().union(*npm_scripts.values()) if npm_scripts else set()
-    docs = [f for f in files
-            if Path(f).suffix in DOC_EXTS and not any(p in SKIP_DIRS for p in Path(f).parts)]
+    docs = []
+    for doc in files:
+        if (Path(doc).suffix not in DOC_EXTS
+                or any(part in SKIP_DIRS for part in Path(doc).parts)):
+            continue
+        try:
+            size = (repo / doc).stat().st_size
+        except OSError:
+            docs.append(doc)
+            continue
+        if size > MAX_READ:
+            warnings.append(
+                f"skipped documentation file {doc} ({size} bytes exceeds "
+                f"the {MAX_READ}-byte read limit)")
+            continue
+        docs.append(doc)
     documented_entrypoints: set[str] = set()
 
     for doc in docs:
@@ -2300,6 +2352,7 @@ def build(repo: Path, files: list[str], check_paths: bool = False) -> dict:
 
         # 2 and 3. links and backticked paths
         for i, target in markdown_links(markdown_lines_without_code(text)):
+            target = html.unescape(target)
             local_target = target.split("#", 1)[0].split("?", 1)[0].strip()
             if (not local_target or URI_SCHEME.match(local_target)
                     or local_target.startswith(("//", "#"))):
@@ -2374,7 +2427,10 @@ def build(repo: Path, files: list[str], check_paths: bool = False) -> dict:
                 source=readers[0])
 
     # 5. staleness
-    code_files = [f for f in files if Path(f).suffix.lower() in CODE_EXTS]
+    code_files = [
+        f for f in files
+        if Path(f).suffix.lower() in CODE_EXTS | {".ps1", ".psm1", ".psd1"}
+    ]
     newest_code = newest_commit_epoch(repo, code_files)
     if newest_code:
         for doc in docs:

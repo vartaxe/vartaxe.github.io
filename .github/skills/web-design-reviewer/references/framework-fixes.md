@@ -146,11 +146,13 @@ module.exports = {
 
 ### Accessibility Improvements
 
+Use `blue-700` by default and `blue-800` on hover to keep normal-sized white button text above the WCAG 4.5:1 contrast minimum (6.70:1 and 8.72:1, respectively).
+
 ```jsx
 {/* Add focus state */}
 <button className="
-  bg-blue-500 text-white
-  hover:bg-blue-600
+  bg-blue-700 text-white
+  hover:bg-blue-800
   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
 ">
   Button
