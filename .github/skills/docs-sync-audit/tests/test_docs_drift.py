@@ -88,6 +88,35 @@ class DocsDriftTests(unittest.TestCase):
                     "RUBY_INTERPOLATED": ["settings.rb:5"],
                 })
 
+    def test_javascript_compound_assignments_and_increments_are_reads(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "main.js").write_text(
+                "process.env.ASSIGN_ONLY = 'configured';\n"
+                "process.env.API_TOKEN += 'suffix';\n"
+                "process.env.RETRY_COUNT++;\n"
+                "++process.env.PREFIX_COUNT;\n",
+                encoding="utf-8")
+            (repo / ".env.example").write_text(
+                "ASSIGN_ONLY=1\n"
+                "API_TOKEN=1\n"
+                "RETRY_COUNT=1\n"
+                "PREFIX_COUNT=1\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(
+                repo, ["main.js", ".env.example", "README.md"])
+            env_names = DOCS_DRIFT.env_names_from_code(repo, ["main.js"])
+            unused = {
+                finding["detail"].split("`", 2)[1]
+                for finding in result["findings"]
+                if finding["kind"] == "documented-unused-env"
+            }
+
+            self.assertEqual(
+                set(env_names), {"API_TOKEN", "RETRY_COUNT", "PREFIX_COUNT"})
+            self.assertEqual(unused, {"ASSIGN_ONLY"})
+
     def test_powershell_env_writes_and_comments_are_not_reads(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)

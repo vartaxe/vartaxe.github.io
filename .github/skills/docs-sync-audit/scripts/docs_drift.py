@@ -2148,9 +2148,7 @@ def env_code_positions(text: str, suffix: str) -> bytearray:
     return positions
 
 
-ENV_ASSIGNMENT = re.compile(
-    r"\s*(?:\+\+|--|>>>=|<<=|>>=|&&=|\|\|=|\?\?=|"
-    r"\+=|-=|\*=|/=|%=|&=|\|=|\^=|=(?!=|>))")
+ENV_ASSIGNMENT = re.compile(r"\s*=(?!=|>)")
 
 
 def env_names_from_code(repo: Path, files: list[str]) -> dict[str, list[str]]:
