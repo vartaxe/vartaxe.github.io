@@ -2045,6 +2045,114 @@ def python_env_reads(text: str) -> list[tuple[str, int]]:
     return found
 
 
+def env_code_positions(text: str, suffix: str) -> bytearray:
+    """Mark code positions outside comments and string literals."""
+    positions = bytearray(len(text))
+    template_literals = suffix in {
+        ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte",
+    }
+    hash_comments = suffix in {".rb", ".php", ".ex", ".exs", ".sh"}
+    modes = [("code", 0)]
+    quote = None
+    escaped = False
+    line_comment = False
+    block_comment = False
+    index = 0
+
+    while index < len(text):
+        char = text[index]
+        mode = modes[-1][0]
+
+        if mode == "template":
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == "`":
+                modes.pop()
+            elif text.startswith("${", index):
+                modes.append(("expression", 1))
+                index += 2
+                continue
+            index += 1
+            continue
+
+        if line_comment:
+            if char == "\n":
+                line_comment = False
+            index += 1
+            continue
+
+        if block_comment:
+            if text.startswith("*/", index):
+                block_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif (suffix == ".rb" and quote == '"'
+                  and text.startswith("#{", index)):
+                quote = None
+                modes.append(("ruby_expression", 1))
+                index += 2
+                continue
+            elif char == quote:
+                quote = None
+            index += 1
+            continue
+
+        if text.startswith("/*", index):
+            block_comment = True
+            index += 2
+            continue
+        if text.startswith("//", index):
+            line_comment = True
+            index += 2
+            continue
+        if hash_comments and char == "#":
+            line_comment = True
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            index += 1
+            continue
+        if char == "`":
+            if template_literals:
+                modes.append(("template", 0))
+            else:
+                quote = char
+            index += 1
+            continue
+
+        positions[index] = 1
+        if mode in {"expression", "ruby_expression"}:
+            _, depth = modes[-1]
+            if char == "{":
+                modes[-1] = (mode, depth + 1)
+            elif char == "}":
+                if depth == 1:
+                    modes.pop()
+                    if mode == "ruby_expression":
+                        quote = '"'
+                else:
+                    modes[-1] = (mode, depth - 1)
+        index += 1
+
+    return positions
+
+
+ENV_ASSIGNMENT = re.compile(
+    r"\s*(?:\+\+|--|>>>=|<<=|>>=|&&=|\|\|=|\?\?=|"
+    r"\+=|-=|\*=|/=|%=|&=|\|=|\^=|=(?!=|>))")
+
+
 def env_names_from_code(repo: Path, files: list[str]) -> dict[str, list[str]]:
     """Env var names the code reads, mapped to every location that reads them."""
     found: dict[str, list[str]] = {}
@@ -2063,10 +2171,20 @@ def env_names_from_code(repo: Path, files: list[str]) -> dict[str, list[str]]:
             for name, line in python_env_reads(text):
                 found.setdefault(name, []).append(f"{rel}:{line}")
             continue
-        for i, line in enumerate(text.splitlines(), start=1):
-            names = [name for pattern in ENV_IN_CODE for name in pattern.findall(line)]
-            for name in names:
-                found.setdefault(name, []).append(f"{rel}:{i}")
+        code_positions = env_code_positions(text, Path(rel).suffix.lower())
+        line_start = 0
+        for i, line in enumerate(text.splitlines(keepends=True), start=1):
+            for pattern in ENV_IN_CODE:
+                for match in pattern.finditer(line):
+                    if not code_positions[line_start + match.start()]:
+                        continue
+                    assignment_tail = re.sub(
+                        r"^\s*(?:\]\s*)*", "", line[match.end():])
+                    if ENV_ASSIGNMENT.match(assignment_tail):
+                        continue
+                    name = next(group for group in match.groups() if group)
+                    found.setdefault(name, []).append(f"{rel}:{i}")
+            line_start += len(line)
         if Path(rel).suffix.lower() == ".sh":
             for name, line in shell_env_reads(text):
                 found.setdefault(name, []).append(f"{rel}:{line}")

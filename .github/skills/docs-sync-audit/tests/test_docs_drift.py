@@ -50,6 +50,44 @@ class DocsDriftTests(unittest.TestCase):
                 DOCS_DRIFT.env_names_from_code(repo, ["main.go"])["API_TOKEN"],
                 ["main.go:1", "main.go:2"])
 
+    def test_non_python_env_scanner_ignores_comments_strings_and_writes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "main.js").write_text(
+                "// process.env.LINE_COMMENT\n"
+                "/* process.env.BLOCK_COMMENT */\n"
+                'const message = "process.env.STRING_ONLY";\n'
+                'process.env.WRITE_ONLY = "configured";\n'
+                "const token = process.env.API_TOKEN;\n"
+                "const port = `port=${process.env.PORT}`;\n",
+                encoding="utf-8")
+            (repo / "main.go").write_text(
+                '// os.Getenv("LINE_COMMENT")\n'
+                '/* os.Getenv("BLOCK_COMMENT") */\n'
+                'message := `os.Getenv("RAW_STRING")`\n'
+                'token := os.Getenv("GO_TOKEN")\n',
+                encoding="utf-8")
+            (repo / "settings.rb").write_text(
+                '# ENV["LINE_COMMENT"]\n'
+                "message = \"ENV['STRING_ONLY']\"\n"
+                'ENV["WRITE_ONLY"] = "configured"\n'
+                'token = ENV["RUBY_TOKEN"]\n'
+                "message = \"#{ENV['RUBY_INTERPOLATED']}\"\n",
+                encoding="utf-8")
+
+            env_names = DOCS_DRIFT.env_names_from_code(
+                repo, ["main.js", "main.go", "settings.rb"])
+
+            self.assertEqual(
+                env_names,
+                {
+                    "API_TOKEN": ["main.js:5"],
+                    "PORT": ["main.js:6"],
+                    "GO_TOKEN": ["main.go:4"],
+                    "RUBY_TOKEN": ["settings.rb:4"],
+                    "RUBY_INTERPOLATED": ["settings.rb:5"],
+                })
+
     def test_powershell_env_writes_and_comments_are_not_reads(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
