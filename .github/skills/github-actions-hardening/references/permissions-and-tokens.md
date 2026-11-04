@@ -73,5 +73,8 @@ specific branch/environment so a fork or another repo cannot assume the role.
 * Reference secrets only in the jobs that need them.
 * Never `echo` a secret or enable shell tracing (`set -x`) in a step that handles one.
 * Don't pass secrets into third-party actions you haven't pinned and reviewed.
-* Remember fork `pull_request` runs get no secrets — don't try to "fix" that by switching to
-  `pull_request_target` (see `triggers-and-privilege.md`).
+* Fork-triggered `pull_request` runs usually do not receive secrets, but repository settings can permit
+  secrets for fork workflows. Verify those settings and actual secret exposure rather than assuming
+  secrets are absent. Do not switch to `pull_request_target` to obtain secrets; its base-repository
+  context may expose secrets or elevated permissions, so review what is actually available and never
+  execute fork code with those privileges (see `triggers-and-privilege.md`).

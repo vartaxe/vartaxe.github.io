@@ -11,6 +11,25 @@ SPEC.loader.exec_module(DOCS_DRIFT)
 
 
 class DocsDriftTests(unittest.TestCase):
+    def test_powershell_env_uppercase_suffixes_are_supported(self):
+        files = ["settings.PS1", "module.PSM1", "data.PSD1"]
+        contents = [
+            "Write-Output $env:SCRIPT_READ\n",
+            "Write-Output $env:MODULE_READ\n",
+            "Write-Output $env:DATA_READ\n",
+        ]
+
+        with patch.object(DOCS_DRIFT, "read", side_effect=contents):
+            env_names = DOCS_DRIFT.env_names_from_code(Path("."), files)
+
+        self.assertEqual(
+            env_names,
+            {
+                "SCRIPT_READ": ["settings.PS1:1"],
+                "MODULE_READ": ["module.PSM1:1"],
+                "DATA_READ": ["data.PSD1:1"],
+            })
+
     def test_go_getenv_and_lookupenv_prevent_unused_env_finding(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -54,6 +73,27 @@ class DocsDriftTests(unittest.TestCase):
                     "ACTUAL_READ": ["settings.ps1:7"],
                     "EXPANDED_READ": ["settings.ps1:8"],
                 })
+
+    def test_powershell_get_environment_variable_literal_is_a_read(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "settings.ps1").write_text(
+                "[Environment]::GetEnvironmentVariable('API_TOKEN')\n"
+                "# [Environment]::GetEnvironmentVariable('COMMENT_ONLY')\n"
+                '"[Environment]::GetEnvironmentVariable(\'STRING_ONLY\')"\n',
+                encoding="utf-8")
+            (repo / "README.md").write_text(
+                "Configure `API_TOKEN` before running the script.\n",
+                encoding="utf-8")
+
+            env_names = DOCS_DRIFT.env_names_from_code(repo, ["settings.ps1"])
+            result = DOCS_DRIFT.build(
+                repo, ["settings.ps1", "README.md"])
+
+            self.assertEqual(env_names, {"API_TOKEN": ["settings.ps1:1"]})
+            self.assertNotIn(
+                "documented-unused-env",
+                {finding["kind"] for finding in result["findings"]})
 
     def test_powershell_escaped_env_references_are_not_reads(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -301,6 +341,61 @@ continues inside this code span`
             self.assertEqual(len(broken), 1)
             self.assertIn("missing(v2).md", broken[0]["detail"])
 
+    def test_percent_encoded_colon_in_relative_link_is_checked_as_a_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "README.md").write_text(
+                "[Guide](guide%3Av2.md)\n", encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["README.md"])
+
+            broken = [
+                finding for finding in result["findings"]
+                if finding["kind"] == "broken-link"
+            ]
+            self.assertEqual(len(broken), 1)
+            self.assertIn("guide:v2.md", broken[0]["detail"])
+
+    def test_markdown_links_parse_parenthesized_titles(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "existing.md").write_text("# Setup\n", encoding="utf-8")
+            (repo / "README.md").write_text(
+                "[Setup](existing.md (Setup guide))\n"
+                "[Missing](missing.md (Setup guide))\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(
+                repo, ["README.md", "existing.md"])
+            broken = [
+                finding for finding in result["findings"]
+                if finding["kind"] == "broken-link"
+            ]
+
+            self.assertEqual(len(broken), 1)
+            self.assertEqual(broken[0]["line"], 2)
+            self.assertIn("missing.md", broken[0]["detail"])
+
+    def test_multiline_markdown_link_reports_its_starting_line(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "README.md").write_text(
+                "Introductory paragraph.\n"
+                "[Setup](\n"
+                "    missing.md\n"
+                ")\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["README.md"])
+            broken = [
+                finding for finding in result["findings"]
+                if finding["kind"] == "broken-link"
+            ]
+
+            self.assertEqual(len(broken), 1)
+            self.assertEqual(broken[0]["line"], 2)
+            self.assertIn("missing.md", broken[0]["detail"])
+
     def test_unparseable_markdown_link_is_skipped(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -417,6 +512,45 @@ continues inside this code span`
                 {finding["kind"] for finding in result["findings"]})
             self.assertNotIn(
                 "undocumented-env",
+                {finding["kind"] for finding in result["findings"]})
+
+    def test_backticked_camel_case_env_name_matches_code_read(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "main.py").write_text(
+                'service_port = os.getenv("servicePort")\n',
+                encoding="utf-8")
+            (repo / "README.md").write_text(
+                "Configure `servicePort` before starting the application.\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["main.py", "README.md"])
+
+            self.assertNotIn(
+                "undocumented-env",
+                {finding["kind"] for finding in result["findings"]})
+
+    def test_documented_javascript_env_access_is_not_treated_as_filename(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "main.js").write_text(
+                "process.env.API_TOKEN; process.env['DB_URL'];\n",
+                encoding="utf-8")
+            (repo / "README.md").write_text(
+                "Configure `process.env.API_TOKEN` and "
+                "`process.env['DB_URL']`.\n"
+                "See `config.API_TOKEN.js` for details.\n",
+                encoding="utf-8")
+            files = ["main.js", "README.md"]
+
+            documented = DOCS_DRIFT.env_names_documented(
+                repo, files, {"API_TOKEN", "DB_URL"})
+            result = DOCS_DRIFT.build(repo, files)
+
+            self.assertEqual(
+                documented, {"API_TOKEN": "README.md:1", "DB_URL": "README.md:1"})
+            self.assertNotIn(
+                "documented-unused-env",
                 {finding["kind"] for finding in result["findings"]})
 
     def test_env_reads_are_scoped_to_powershell_and_shell_sources(self):
@@ -564,6 +698,25 @@ continues inside this code span`
                 "missing-script-file",
                 {finding["kind"] for finding in result["findings"]})
 
+    def test_deleted_tracked_script_is_reported_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            scripts = repo / "scripts"
+            scripts.mkdir()
+            script = scripts / "build.py"
+            script.write_text("print('ok')\n", encoding="utf-8")
+            doc = repo / "README.md"
+            doc.write_text(
+                "```sh\npython scripts/build.py\n```\n", encoding="utf-8")
+            files = ["README.md", "scripts/build.py"]
+            script.unlink()
+
+            result = DOCS_DRIFT.build(repo, files)
+
+            self.assertIn(
+                "missing-script-file",
+                {finding["kind"] for finding in result["findings"]})
+
     def test_power_shell_script_invocations_without_dot_slash_are_checked(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -581,6 +734,30 @@ continues inside this code span`
             ]
 
             self.assertEqual(len(missing), 2)
+
+    def test_power_shell_windows_separators_resolve_from_default_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            scripts = repo / "scripts"
+            scripts.mkdir()
+            (scripts / "check.ps1").write_text("Write-Output ok\n", encoding="utf-8")
+            (repo / "README.md").write_text(
+                "```powershell\npwsh -File .\\scripts\\check.ps1\n```\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["scripts/check.ps1", "README.md"])
+
+            self.assertNotIn(
+                "missing-script-file",
+                {finding["kind"] for finding in result["findings"]})
+            self.assertEqual(
+                DOCS_DRIFT.normalize_script_candidate(r".\scripts\check.ps1"),
+                "./scripts/check.ps1")
+            self.assertEqual(
+                DOCS_DRIFT.documented_script_relative_path(
+                    repo, "README.md", r".\scripts\check.ps1", Path("."),
+                    False, {"scripts/check.ps1"}),
+                "scripts/check.ps1")
 
     def test_placeholder_names_are_matched_at_component_boundaries(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -961,6 +1138,31 @@ continues inside this code span`
                 "documented-env-in-unreferenced-module",
                 {finding["kind"] for finding in result["findings"]})
 
+    def test_package_script_entrypoints_are_not_unreferenced(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            scripts = repo / "scripts"
+            scripts.mkdir()
+            (scripts / "build.js").write_text(
+                "const apiKey = process.env.API_KEY;\n",
+                encoding="utf-8")
+            (repo / "package.json").write_text(
+                '{"scripts": {"build": "node scripts/build.js"}}\n',
+                encoding="utf-8")
+            (repo / "README.md").write_text(
+                "Configure `API_KEY` before building.\n",
+                encoding="utf-8")
+            files = ["package.json", "scripts/build.js", "README.md"]
+
+            result = DOCS_DRIFT.build(repo, files)
+
+            self.assertNotIn(
+                "documented-env-in-unreferenced-module",
+                {finding["kind"] for finding in result["findings"]})
+            self.assertEqual(
+                DOCS_DRIFT.package_script_entrypoints(repo, files),
+                {"scripts/build.js"})
+
     def test_list_files_prunes_skipped_directories_without_git(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -1198,6 +1400,43 @@ continues inside this code span`
 
             self.assertNotIn(
                 "broken-link", {finding["kind"] for finding in result["findings"]})
+
+    def test_indented_paragraph_continuation_links_are_checked(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "README.md").write_text(
+                "Description:\n"
+                "    [Guide](missing.md)\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["README.md"])
+
+            broken = [
+                finding for finding in result["findings"]
+                if finding["kind"] == "broken-link"
+            ]
+            self.assertEqual(len(broken), 1)
+            self.assertEqual(broken[0]["line"], 2)
+
+    def test_inline_code_spans_do_not_cross_list_item_boundaries(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            (repo / "README.md").write_text(
+                "- An unmatched code delimiter: `\n"
+                "- A multiline code span: `[Example](not-a-link.md)\n"
+                "  continues in this item`\n"
+                "- [Broken link](missing.md)\n",
+                encoding="utf-8")
+
+            result = DOCS_DRIFT.build(repo, ["README.md"])
+            broken = [
+                finding for finding in result["findings"]
+                if finding["kind"] == "broken-link"
+            ]
+
+            self.assertEqual(len(broken), 1)
+            self.assertIn("missing.md", broken[0]["detail"])
+            self.assertEqual(broken[0]["line"], 4)
 
     def test_inline_code_spans_do_not_cross_markdown_heading_boundaries(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -33,9 +33,11 @@ Offending code:
     - run: |
         echo "New PR: ${{ github.event.pull_request.title }}"
 
-Risk: pull_request_target runs with a read/write token and repository secrets, and any
-contributor can open a PR with a title like  "; <attacker-command> #  which is executed as shell.
-This allows secret exfiltration and pushes with the workflow token.
+Risk: The interpolated title lets an attacker execute shell code in this job. `pull_request_target`
+uses the base-repository context, but do not assume the job has write access or that secrets reach
+the executed code: verify effective token permissions, exposed secrets, runner isolation or
+persistence, and shared caches or other writable resources. State the concrete impact supported
+by those checks and rate severity from that impact, not from the trigger alone.
 
 Fix:
     - env:
@@ -63,7 +65,8 @@ End with the explicit line:
 * Quote the exact offending line and give its location.
 * Explain risk in plain English — what an attacker actually does, not just the rule name.
 * Per-finding confidence: High / Medium / Low.
-* Do not rate fork `pull_request` code execution as CRITICAL solely because it is untrusted.
-  Verify effective token permissions, repository fork-PR settings, and runner isolation; only
-  exempt execution on isolated runners with no exposed credentials/secrets or persistent resources.
-  Assess persistent self-hosted runner compromise independently of trigger type or token permissions.
+* Do not rate untrusted-code execution as CRITICAL solely because the code is untrusted or the
+  trigger is privileged. Verify effective token permissions, repository fork-PR settings, which
+  credentials or secrets are actually exposed to executed code, runner isolation or persistence,
+  and shared caches or other writable resources. Base severity on verified impact, and assess
+  persistent/shared resource compromise independently of token permissions or trigger type.

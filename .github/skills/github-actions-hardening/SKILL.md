@@ -79,10 +79,15 @@ Read `references/injection.md` for the complete sink list and the safe-pattern f
 
 If a `pull_request_target` or `workflow_run` workflow checks out PR/fork code
 (`ref: ${{ github.event.pull_request.head.sha }}`) **and then runs it** (build, test, install
-scripts, `npm install` with lifecycle scripts, etc.), that is remote code execution against a
-privileged token. Flag it as CRITICAL. The safe pattern is to split into two workflows: an
-unprivileged `pull_request` workflow that runs the untrusted code, and a privileged
-`workflow_run` workflow that only consumes its results.
+scripts, `npm install` with lifecycle scripts, etc.), treat this as attacker-controlled code
+execution in that job, but do not label it CRITICAL from the trigger or execution alone.
+Verify the effective job token permissions (including repository defaults), which secrets or
+other credentials are actually exposed to the code, whether the runner is isolated or
+persistent, and whether caches or other writable resources are shared with trusted jobs.
+Rate severity from the verified reachable impact; use CRITICAL only for severe compromise,
+such as high-impact credential theft/use or compromise of persistent/shared resources. The
+safe pattern is to split into two workflows: an unprivileged `pull_request` workflow that
+runs the untrusted code, and a privileged `workflow_run` workflow that only consumes its results.
 
 ### Step 4 — Audit `permissions:`
 
@@ -128,7 +133,7 @@ concrete before/after fix. Never auto-apply changes — present them for review.
 
 | Severity | Meaning | Example |
 | --- | --- | --- |
-| 🔴 CRITICAL | Severe compromise reachable by an outside contributor, including token/secret theft, RCE, or persistent runner compromise | `pull_request_target` checking out and running fork code; attacker-controlled script input on a privileged workflow; fork code compromising a persistent self-hosted runner |
+| 🔴 CRITICAL | Severe compromise reachable by an outside contributor through verified access to high-impact credentials or persistent/shared resources | Fork code with verified access to valuable credentials or the ability to compromise a persistent runner or shared cache; untrusted-code execution alone does not establish CRITICAL |
 | 🟠 HIGH | Exploitable supply-chain or scope problem | Third-party action on a mutable tag/branch; `write-all` permissions; injection sink on `issue_comment` |
 | 🟡 MEDIUM | Risk under conditions or chaining | Missing `permissions:` block; secret reachable by a non-fork PR author |
 | 🔵 LOW | Hardening gap, low direct risk | First-party action not SHA-pinned; `persist-credentials` left default on a non-privileged job |
@@ -142,9 +147,9 @@ concrete before/after fix. Never auto-apply changes — present them for review.
 * **Always** pair every CRITICAL/HIGH with a concrete corrected YAML snippet.
 * Do not flag fork `pull_request` solely because it runs untrusted code when execution is isolated
   and no credentials, secrets, or persistent resources are exposed. Verify effective token permissions,
-  repository fork-PR settings, and runner isolation as distinct controls. Assess potential persistent
-  self-hosted runner compromise independently of token permissions or trigger type; CRITICAL is not
-  reserved for privileged triggers.
+  repository fork-PR settings, secret exposure, and runner isolation as distinct controls. Check for
+  shared caches or other writable resources, and assess persistent runner/resource compromise
+  independently of token permissions or trigger type; execution alone does not establish CRITICAL.
 * If the workflow is already hardened, say so and list what was checked.
 
 ## Reference Files

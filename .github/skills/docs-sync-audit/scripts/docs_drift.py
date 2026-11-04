@@ -113,9 +113,16 @@ ENV_IN_CODE = [
 ]
 ENV_NAME = re.compile(r"\b([A-Z][A-Z0-9_]{2,})\b")
 ENV_SAMPLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+JS_ENV_ACCESS = re.compile(
+    r"""^\s*process\.env(?:\.([A-Z][A-Z0-9_]*)|"""
+    r"""\[\s*(['"])([A-Z][A-Z0-9_]*)\2\s*\])\s*$""")
 POWERSHELL_ENV = re.compile(
     r"(?i)\$(?:env:([A-Za-z_][A-Za-z0-9_]*)|"
     r"\{env:([A-Za-z_][A-Za-z0-9_().-]*)\})")
+POWERSHELL_GET_ENVIRONMENT_VARIABLE = re.compile(
+    r"""\[\s*(?:System\.)?Environment\s*\]\s*::\s*"""
+    r"""GetEnvironmentVariable\s*\(\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\)""",
+    re.I)
 SHELL_ENV = re.compile(
     r"\$(?:\{([A-Z][A-Z0-9_]*)(?=[:+\-?}=])|([A-Z][A-Z0-9_]*)\b)")
 
@@ -1068,15 +1075,21 @@ def markdown_lines_without_code(text: str) -> list[tuple[int, str]]:
     fence_list_indent: int | None = None
     list_indent: int | None = None
     list_depth: int | None = None
+    paragraph_active = False
+    paragraph_depth: int | None = None
     for i, line in enumerate(lines):
         while True:
             depth, content = markdown_blockquote_content(line)
+            if paragraph_depth is not None and depth != paragraph_depth:
+                paragraph_active = False
             if fence_char:
                 if depth < fence_depth:
                     fence_char = ""
                     fence_length = 0
                     fence_depth = 0
                     fence_list_indent = None
+                    paragraph_active = False
+                    paragraph_depth = None
                     continue
                 content = markdown_blockquote_content(line, fence_depth)[1]
                 if fence_list_indent is not None and depth == fence_depth:
@@ -1089,6 +1102,8 @@ def markdown_lines_without_code(text: str) -> list[tuple[int, str]]:
                             fence_list_indent = None
                             list_indent = None
                             list_depth = None
+                            paragraph_active = False
+                            paragraph_depth = None
                             continue
                         content = content[fence_list_indent:]
                 marker = MARKDOWN_FENCE.match(content)
@@ -1099,6 +1114,8 @@ def markdown_lines_without_code(text: str) -> list[tuple[int, str]]:
                     fence_depth = 0
                     fence_list_indent = None
                 fenced_lines[i] = True
+                paragraph_active = False
+                paragraph_depth = None
                 break
 
             content, list_indent, list_depth, container_indent = (
@@ -1111,8 +1128,23 @@ def markdown_lines_without_code(text: str) -> list[tuple[int, str]]:
                 fence_depth = depth
                 fence_list_indent = container_indent
                 fenced_lines[i] = True
+                paragraph_active = False
+                paragraph_depth = None
+            elif not content.strip():
+                paragraph_active = False
+                paragraph_depth = None
             elif content.startswith(("    ", "\t")):
-                fenced_lines[i] = True
+                if not paragraph_active:
+                    fenced_lines[i] = True
+                    paragraph_depth = None
+                else:
+                    paragraph_depth = depth
+            elif re.match(r"^[ \t]{0,3}#{1,6}(?:[ \t]+|$)", content):
+                paragraph_active = False
+                paragraph_depth = None
+            else:
+                paragraph_active = True
+                paragraph_depth = depth
             break
 
     cleaned_lines = [list(line) for line in lines]
@@ -1139,6 +1171,10 @@ def markdown_lines_without_code(text: str) -> list[tuple[int, str]]:
                 paragraph_end = paragraph_start
                 while (paragraph_end < segment_end
                        and lines[paragraph_end].strip()
+                       and (paragraph_end == paragraph_start
+                            or not markdown_list_item_content(
+                                markdown_blockquote_content(
+                                    lines[paragraph_end])[1]))
                        and not re.match(
                            r"^[ \t]{0,3}#{1,6}(?:[ \t]+|$)",
                            markdown_blockquote_content(lines[paragraph_end])[1])):
@@ -1290,6 +1326,22 @@ def markdown_link_destination(
             return None
         while index < len(text) and text[index].isspace():
             index += 1
+    elif index < len(text) and text[index] == "(":
+        index += 1
+        while index < len(text):
+            if text[index] == "\\":
+                index += 2
+            elif text[index] == ")":
+                index += 1
+                break
+            elif text[index] == "(":
+                return None
+            else:
+                index += 1
+        else:
+            return None
+        while index < len(text) and text[index].isspace():
+            index += 1
     if index >= len(text) or text[index] != ")":
         return None
     return "".join(destination), index + 1
@@ -1344,39 +1396,100 @@ def markdown_links(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
                 markdown_reference_label(definition.group(1)), destination[0])
             definition_lines.add(line_number)
 
-    links = []
+    paragraphs: list[list[tuple[int, str]]] = []
+    paragraph: list[tuple[int, str]] = []
+    paragraph_is_list_item = False
+    list_continuation_indent = 0
+
+    def finish_paragraph() -> None:
+        nonlocal paragraph, paragraph_is_list_item, list_continuation_indent
+        if paragraph:
+            paragraphs.append(paragraph)
+            paragraph = []
+        paragraph_is_list_item = False
+        list_continuation_indent = 0
+
     for line_number, line in lines:
-        if line_number in definition_lines:
+        if line_number in definition_lines or not line.strip():
+            finish_paragraph()
             continue
+
+        content = markdown_blockquote_content(line)[1]
+        is_heading = re.match(r"^[ \t]{0,3}#{1,6}(?:[ \t]+|$)", content)
+        list_item = markdown_list_item_content(content)
+        if is_heading or list_item:
+            finish_paragraph()
+            paragraph = [(line_number, line)]
+            if list_item:
+                paragraph_is_list_item = True
+                list_continuation_indent = list_item[0]
+            if is_heading:
+                finish_paragraph()
+            continue
+        if re.match(r"^[ \t]{0,3}(?:(?:-{3,})|(?:_{3,})|(?:\*{3,}))[ \t]*$", content):
+            finish_paragraph()
+            paragraph = [(line_number, line)]
+            finish_paragraph()
+            continue
+        if paragraph_is_list_item:
+            indentation = len(content) - len(content.lstrip(" "))
+            if indentation < list_continuation_indent:
+                finish_paragraph()
+        paragraph.append((line_number, line))
+
+    finish_paragraph()
+
+    links = []
+    for paragraph in paragraphs:
+        text_parts = []
+        line_starts = []
+        text_length = 0
+        for _, line in paragraph:
+            if text_parts:
+                text_parts.append("\n")
+                text_length += 1
+            line_starts.append(text_length)
+            text_parts.append(line)
+            text_length += len(line)
+        text = "".join(text_parts)
+
+        def source_line(index: int) -> int:
+            line_index = 0
+            while (line_index + 1 < len(line_starts)
+                   and line_starts[line_index + 1] <= index):
+                line_index += 1
+            return paragraph[line_index][0]
+
         index = 0
-        while index < len(line):
-            if line[index] == "\\":
+        while index < len(text):
+            if text[index] == "\\":
                 index += 2
                 continue
-            if line[index] != "[":
+            if text[index] != "[":
                 index += 1
                 continue
-            closing = markdown_bracket_end(line, index)
+            closing = markdown_bracket_end(text, index)
             if closing is None:
                 index += 1
                 continue
 
-            label = line[index + 1:closing]
+            line_number = source_line(index)
+            label = text[index + 1:closing]
             if "[" in label:
                 links.extend(markdown_image_links(label, line_number, references))
             after = closing + 1
-            if after < len(line) and line[after] == "(":
-                destination = markdown_link_destination(line, after + 1)
+            if after < len(text) and text[after] == "(":
+                destination = markdown_link_destination(text, after + 1)
                 if destination:
                     links.append((line_number, destination[0]))
                 index += 1
                 continue
 
             reference = None
-            if after < len(line) and line[after] == "[":
-                reference_end = markdown_bracket_end(line, after)
+            if after < len(text) and text[after] == "[":
+                reference_end = markdown_bracket_end(text, after)
                 if reference_end is not None:
-                    reference_label = line[after + 1:reference_end] or label
+                    reference_label = text[after + 1:reference_end] or label
                     reference = markdown_reference_label(reference_label)
                     if reference in references:
                         links.append((line_number, references[reference]))
@@ -1392,6 +1505,7 @@ def markdown_links(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
 
 def documented_script_exists(repo: Path, doc: str, candidate: str) -> bool:
     """Resolve command paths from the repo, doc directory, or containing skill root."""
+    candidate = normalize_script_candidate(candidate)
     doc_dir = (repo / doc).parent
     candidates = [repo / candidate, doc_dir / candidate]
 
@@ -1409,6 +1523,7 @@ def documented_script_relative_path(
         repo: Path, doc: str, candidate: str, invocation_cwd: Path | None,
         explicit_cwd: bool, files: set[str]) -> str | None:
     """Resolve a documented invocation to a scanned repository file."""
+    candidate = normalize_script_candidate(candidate)
     doc_dir = (repo / doc).parent
     if explicit_cwd and invocation_cwd is not None:
         target = Path(candidate.replace("\\", "/"))
@@ -1430,6 +1545,14 @@ def documented_script_relative_path(
         if relative in files and path.is_file():
             return relative
     return None
+
+
+def normalize_script_candidate(candidate: str) -> str:
+    """Normalize Windows separators in PowerShell script operands for path checks."""
+    normalized = candidate.replace("\\", "/")
+    if Path(normalized).suffix.lower() in {".ps1", ".psm1", ".psd1"}:
+        return normalized
+    return candidate
 
 
 def script_directory_from(repo: Path, current: Path | None, target: str) -> Path | None:
@@ -1614,6 +1737,12 @@ def powershell_env_reads(text: str) -> list[tuple[str, int]]:
                         index += 1
             continue
 
+        match = POWERSHELL_GET_ENVIRONMENT_VARIABLE.match(text, index)
+        if match:
+            found.append((match.group(2), line))
+            index = match.end()
+            continue
+
         match = POWERSHELL_ENV.match(text, index)
         if match:
             cursor = match.end()
@@ -1768,7 +1897,7 @@ def env_names_from_code(repo: Path, files: list[str]) -> dict[str, list[str]]:
     """Env var names the code reads, mapped to every location that reads them."""
     found: dict[str, list[str]] = {}
     for rel in files:
-        if Path(rel).suffix not in ENV_CODE_EXTS or any(p in SKIP_DIRS for p in Path(rel).parts):
+        if Path(rel).suffix.lower() not in ENV_CODE_EXTS or any(p in SKIP_DIRS for p in Path(rel).parts):
             continue
         text = read(repo / rel)
         if not text or (
@@ -1810,6 +1939,7 @@ def unreferenced_modules(repo: Path, files: list[str],
         re.I)
     imported: set[str] = set()
     guarded_entrypoints: set[str] = set()
+    package_entrypoints = package_script_entrypoints(repo, files)
     for rel in code:
         text = read(repo / rel)
         if not text:
@@ -1835,12 +1965,44 @@ def unreferenced_modules(repo: Path, files: list[str],
     for rel in code:
         if documented_entrypoints and rel in documented_entrypoints:
             continue
+        if rel in package_entrypoints:
+            continue
         if rel in guarded_entrypoints or entrypoint.search(rel):
             continue
         stem = Path(rel).stem.lower()
         if stem not in imported and Path(rel).name.lower() not in imported:
             out.add(rel)
     return out
+
+
+def package_script_entrypoints(repo: Path, files: list[str]) -> set[str]:
+    """Resolve local script files executed by package-manager scripts."""
+    file_set = set(files)
+    entrypoints = set()
+    for rel in files:
+        if Path(rel).name != "package.json":
+            continue
+        try:
+            data = json.loads(read(repo / rel))
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        scripts = data.get("scripts")
+        if not isinstance(scripts, dict):
+            continue
+        package_dir = Path(rel).parent
+        for command in scripts.values():
+            if not isinstance(command, str):
+                continue
+            _, _, _, calls = script_commands_in_line(
+                repo, command, package_dir, [], True)
+            for candidate, invocation_cwd, explicit_cwd in calls:
+                entrypoint = documented_script_relative_path(
+                    repo, rel, candidate, invocation_cwd, explicit_cwd, file_set)
+                if entrypoint:
+                    entrypoints.add(entrypoint)
+    return entrypoints
 
 
 def has_python_main_guard(text: str) -> bool:
@@ -1904,6 +2066,14 @@ def env_names_documented(repo: Path, files: list[str],
                 # what actually distinguishes API_TOKEN from a shouted word, and skip
                 # anything that looks like a filename.
                 for chunk in BACKTICK.findall(line):
+                    if code_names is not None and chunk in code_names:
+                        documented.setdefault(chunk, f"{rel}:{i}")
+                        continue
+                    js_access = JS_ENV_ACCESS.fullmatch(chunk)
+                    if js_access:
+                        name = js_access.group(1) or js_access.group(3)
+                        documented.setdefault(name, f"{rel}:{i}")
+                        continue
                     if "." in chunk or "/" in chunk:
                         continue
                     for name in ENV_NAME.findall(chunk):
@@ -1996,13 +2166,16 @@ def build(repo: Path, files: list[str], check_paths: bool = False) -> dict:
                         repo, doc, candidate, invocation_cwd, explicit_cwd, file_set)
                     if entrypoint:
                         documented_entrypoints.add(entrypoint)
+                    checked_candidate = normalize_script_candidate(candidate)
                     if (invocation_cwd is None or candidate.endswith("/")
-                            or any(part in SKIP_DIRS for part in Path(candidate).parts)):
+                            or any(part in SKIP_DIRS for part in Path(checked_candidate).parts)):
                         continue
                     exists = (
-                        script_exists_at(repo, invocation_cwd, candidate)
+                        script_exists_at(repo, invocation_cwd, checked_candidate)
                         if explicit_cwd else
-                        candidate in file_set or documented_script_exists(repo, doc, candidate)
+                        (checked_candidate in file_set
+                         and (repo / checked_candidate).is_file())
+                        or documented_script_exists(repo, doc, checked_candidate)
                     )
                     if not exists:
                         add("missing-script-file", "high", doc, lineno,
@@ -2011,9 +2184,10 @@ def build(repo: Path, files: list[str], check_paths: bool = False) -> dict:
         # 2 and 3. links and backticked paths
         for i, target in markdown_links(markdown_lines_without_code(text)):
             local_target = target.split("#", 1)[0].split("?", 1)[0].strip()
-            t = unquote(local_target)
-            if not t or URI_SCHEME.match(t) or t.startswith(("//", "#")):
+            if (not local_target or URI_SCHEME.match(local_target)
+                    or local_target.startswith(("//", "#"))):
                 continue
+            t = unquote(local_target)
             if PLACEHOLDER.search(t):
                 continue
             target_path = Path(t.lstrip("/")) if t.startswith("/") else Path(doc).parent / t

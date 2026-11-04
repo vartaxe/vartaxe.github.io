@@ -31,11 +31,13 @@ compromise.
 ## Why `pull_request_target` Is Dangerous
 
 `pull_request_target` checks out the **base** repository's workflow definition (so a fork can't
-change what runs), but it runs with full privileges. The danger is when the workflow then
-explicitly checks out the **fork's** code and executes it:
+change what runs), and may receive elevated base-repository permissions or access to secrets.
+Verify the effective job token scopes and which credentials are actually exposed to executed
+code; do not assume full write access or that secrets reach it. The danger is when the workflow
+then explicitly checks out the **fork's** code and executes it:
 
 ```yaml
-# DANGEROUS — RCE with a write token + secrets
+# DANGEROUS - attacker-controlled code; impact depends on exposed credentials and runner/resources
 on: pull_request_target
 jobs:
   build:
