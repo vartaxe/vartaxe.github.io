@@ -7,7 +7,7 @@
   --link: #185b4c;
   --on-link: #ffffff;
   --border: #d8ddd4;
-  --accent: #b9573e;
+  --accent: #b34f3e;
   --focus: #185b4c;
   --shadow: 0 1.2rem 2.8rem rgba(34, 44, 37, 0.08);
 }
@@ -203,7 +203,7 @@ main {
   padding: 1rem max(1rem, env(safe-area-inset-right)) 2rem max(1rem, env(safe-area-inset-left));
 }
 
-main section {
+main > section {
   margin: 4.5rem 0;
 }
 
